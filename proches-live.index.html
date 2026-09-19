@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proches</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,500;0,600;0,700;1,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+  :root{
+    --bg:#E7EBE3; --paper:#FBFAF7; --ink:#26302B; --ink-soft:#5B665F; --line:#D7DBCF;
+    --week:#45624F; --sunday:#C98A3E; --keepsake:#B17272;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--bg); font-family:'Inter',sans-serif; color:var(--ink); min-height:100vh;}
+  .app{max-width:480px; margin:0 auto; min-height:100vh; padding-bottom:40px;}
+  header{padding:22px 20px 8px; display:flex; justify-content:space-between; align-items:center;}
+  .logo{font-family:'Fraunces',serif; font-weight:600; font-size:24px;}
+  .signout{font-size:12px; color:var(--ink-soft); cursor:pointer; text-decoration:underline;}
+  main{padding:0 20px;}
+  .card{background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:16px;}
+  .eyebrow{font-size:10.5px; letter-spacing:0.12em; text-transform:uppercase; color:var(--ink-soft); margin:20px 0 8px; font-weight:600;}
+  input, textarea{
+    width:100%; border:1px solid var(--line); border-radius:10px; padding:10px 12px; font-family:'Inter',sans-serif;
+    font-size:14px; color:var(--ink); margin-bottom:10px; background:#fff;
+  }
+  textarea{resize:none;}
+  button{
+    background:var(--week); color:#fff; border:none; border-radius:10px; padding:11px; font-weight:600;
+    font-size:14px; cursor:pointer; width:100%;
+  }
+  button.ghost{background:transparent; color:var(--ink-soft); border:1px solid var(--line);}
+  button:disabled{opacity:0.5; cursor:not-allowed;}
+  .link-btn{background:none; border:none; color:var(--week); text-decoration:underline; font-size:13px; padding:0; width:auto; cursor:pointer;}
+  .row{display:flex; gap:8px;}
+  .row input{flex:1;}
+  .row button{width:auto; padding:0 16px;}
+  .msg{font-size:13px; padding:8px 0; color:var(--ink-soft);}
+  .msg.error{color:#B0413E;}
+  .friend-row{display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line);}
+  .friend-row:last-child{border-bottom:none;}
+  .avatar{width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:13px; flex-shrink:0;}
+  .friend-name{font-weight:600; font-size:13.5px; flex:1;}
+  .tag{font-size:11px; color:var(--ink-soft); font-style:italic; font-family:'Fraunces',serif;}
+  .req-btn{width:28px; height:28px; border-radius:50%; border:none; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center;}
+  .req-accept{background:var(--week); color:#fff;}
+  .req-decline{background:var(--paper); color:var(--ink-soft); border:1px solid var(--line);}
+  .post{margin-bottom:16px; overflow:hidden; padding:0;}
+  .post img{width:100%; display:block; max-height:420px; object-fit:cover;}
+  .post-body{padding:12px 14px;}
+  .post-author{display:flex; align-items:center; gap:8px; margin-bottom:4px;}
+  .post-author b{font-size:13.5px;}
+  .post-date{color:var(--ink-soft); font-size:11px; margin-left:auto;}
+  .post-caption{font-size:13.5px; line-height:1.5;}
+  .empty{text-align:center; padding:30px 16px; color:var(--ink-soft); font-size:13px;}
+  .center-screen{min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px;}
+  .auth-card{width:100%; max-width:340px; background:var(--paper); border:1px solid var(--line); border-radius:16px; padding:26px;}
+  .auth-title{font-family:'Fraunces',serif; font-weight:600; font-size:22px; text-align:center; margin-bottom:4px;}
+  .auth-tag{text-align:center; color:var(--ink-soft); font-size:12.5px; margin-bottom:20px; font-style:italic; font-family:'Fraunces',serif;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+/* ---------- Configuration Supabase ---------- */
+const SUPABASE_URL = 'https://ezhrnfamigknhqniznkr.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_jG21455JghkerQvyyDyxkA_QpkDa5Bw';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const palette = ['#45624F','#B17272','#C98A3E','#5B665F','#4C7A8C','#7C6A9C'];
+function colorFor(str){
+  let h = 0;
+  for(const c of str) h = (h*31 + c.charCodeAt(0)) % palette.length;
+  return palette[h];
+}
+
+let session = null;
+let myProfile = null;
+
+/* ---------- Rendu racine ---------- */
+async function render(){
+  const { data:{ session: s } } = await sb.auth.getSession();
+  session = s;
+  if(!session){ renderAuth(); return; }
+
+  const { data: profile } = await sb.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
+  if(!profile){ renderChooseUsername(); return; }
+  myProfile = profile;
+  renderApp();
+}
+
+/* ---------- Écran de connexion ---------- */
+function renderAuth(mode='signin'){
+  document.getElementById('root').innerHTML = `
+    <div class="center-screen">
+      <div class="auth-card">
+        <div class="auth-title">Proches</div>
+        <div class="auth-tag">Un moment par jour, un souvenir par mois.</div>
+        <div id="authMsg"></div>
+        <input id="authEmail" type="email" placeholder="Adresse email">
+        <input id="authPassword" type="password" placeholder="Mot de passe (6 caractères min.)">
+        <button id="authSubmit">${mode==='signin' ? 'Se connecter' : "Créer mon compte"}</button>
+        <div style="text-align:center; margin-top:14px;">
+          ${mode==='signin'
+            ? `Pas encore de compte ? <button class="link-btn" onclick="renderAuth('signup')">En créer un</button>`
+            : `Déjà un compte ? <button class="link-btn" onclick="renderAuth('signin')">Se connecter</button>`}
+        </div>
+      </div>
+    </div>`;
+  document.getElementById('authSubmit').onclick = async ()=>{
+    const email = document.getElementById('authEmail').value.trim();
+    const password = document.getElementById('authPassword').value;
+    const msg = document.getElementById('authMsg');
+    msg.innerHTML = `<div class="msg">Un instant…</div>`;
+    const fn = mode==='signin' ? sb.auth.signInWithPassword : sb.auth.signUp;
+    const { error } = await fn.call(sb.auth, { email, password });
+    if(error){ msg.innerHTML = `<div class="msg error">${error.message}</div>`; return; }
+    if(mode==='signup'){
+      msg.innerHTML = `<div class="msg">Compte créé ! Si une confirmation par email est demandée, vérifiez votre boîte mail, sinon vous êtes déjà connecté(e).</div>`;
+    }
+    render();
+  };
+}
+
+/* ---------- Choix du nom d'utilisateur (première connexion) ---------- */
+function renderChooseUsername(){
+  document.getElementById('root').innerHTML = `
+    <div class="center-screen">
+      <div class="auth-card">
+        <div class="auth-title">Bienvenue</div>
+        <div class="auth-tag">Choisissez le nom que vos proches verront.</div>
+        <div id="uMsg"></div>
+        <input id="usernameInput" placeholder="Nom d'utilisateur">
+        <button id="uSubmit">Continuer</button>
+      </div>
+    </div>`;
+  document.getElementById('uSubmit').onclick = async ()=>{
+    const username = document.getElementById('usernameInput').value.trim();
+    const msg = document.getElementById('uMsg');
+    if(!username){ msg.innerHTML = `<div class="msg error">Choisissez un nom.</div>`; return; }
+    const { error } = await sb.from('profiles').insert({
+      id: session.user.id, username, avatar_color: colorFor(username)
+    });
+    if(error){ msg.innerHTML = `<div class="msg error">${error.message.includes('duplicate') ? 'Ce nom est déjà pris.' : error.message}</div>`; return; }
+    render();
+  };
+}
+
+/* ---------- Application principale ---------- */
+async function renderApp(){
+  document.getElementById('root').innerHTML = `
+    <div class="app">
+      <header>
+        <div class="logo">Proches</div>
+        <div class="signout" onclick="signOut()">Se déconnecter</div>
+      </header>
+      <main>
+        <div class="card">
+          <div style="font-weight:600; margin-bottom:2px;">Bonjour, ${myProfile.username}</div>
+          <div style="font-size:12px; color:var(--ink-soft);">Compte fermé — votre cercle reste privé.</div>
+        </div>
+
+        <div class="eyebrow">Partager un moment</div>
+        <div class="card">
+          <input type="file" id="photoInput" accept="image/*">
+          <textarea id="captionInput" rows="2" placeholder="Un mot sur ce moment (optionnel)"></textarea>
+          <button id="postBtn">Publier</button>
+          <div id="postMsg"></div>
+        </div>
+
+        <div class="eyebrow">Mon cercle</div>
+        <div class="card">
+          <div class="row">
+            <input id="addFriendInput" placeholder="Ajouter par nom d'utilisateur">
+            <button id="addFriendBtn">Ajouter</button>
+          </div>
+          <div id="friendMsg"></div>
+          <div id="incomingRequests"></div>
+          <div id="friendsList"></div>
+        </div>
+
+        <div class="eyebrow">Le fil de vos proches</div>
+        <div id="feed"></div>
+      </main>
+    </div>`;
+
+  document.getElementById('postBtn').onclick = handlePost;
+  document.getElementById('addFriendBtn').onclick = handleAddFriend;
+  loadCircle();
+  loadFeed();
+}
+
+async function signOut(){ await sb.auth.signOut(); render(); }
+
+/* ---------- Publication ---------- */
+async function handlePost(){
+  const fileInput = document.getElementById('photoInput');
+  const caption = document.getElementById('captionInput').value.trim();
+  const msg = document.getElementById('postMsg');
+  const file = fileInput.files[0];
+  if(!file){ msg.innerHTML = `<div class="msg error">Choisissez une photo.</div>`; return; }
+  msg.innerHTML = `<div class="msg">Envoi en cours…</div>`;
+  const path = `${session.user.id}/${Date.now()}_${file.name}`;
+  const { error: upErr } = await sb.storage.from('photos').upload(path, file);
+  if(upErr){ msg.innerHTML = `<div class="msg error">${upErr.message}</div>`; return; }
+  const { data: pub } = sb.storage.from('photos').getPublicUrl(path);
+  const { error: insErr } = await sb.from('posts').insert({
+    author_id: session.user.id, media_url: pub.publicUrl, media_type: 'photo', caption
+  });
+  if(insErr){ msg.innerHTML = `<div class="msg error">${insErr.message}</div>`; return; }
+  msg.innerHTML = `<div class="msg">Publié !</div>`;
+  fileInput.value = ''; document.getElementById('captionInput').value = '';
+  loadFeed();
+}
+
+/* ---------- Cercle ---------- */
+async function handleAddFriend(){
+  const input = document.getElementById('addFriendInput');
+  const msg = document.getElementById('friendMsg');
+  const username = input.value.trim();
+  if(!username){ return; }
+  msg.innerHTML = `<div class="msg">Recherche…</div>`;
+  const { data: target } = await sb.from('profiles').select('id, username').ilike('username', username).maybeSingle();
+  if(!target){ msg.innerHTML = `<div class="msg error">Personne ne porte ce nom.</div>`; return; }
+  if(target.id === session.user.id){ msg.innerHTML = `<div class="msg error">C'est vous-même !</div>`; return; }
+  const { error } = await sb.from('circles').insert({ requester_id: session.user.id, addressee_id: target.id });
+  if(error){ msg.innerHTML = `<div class="msg error">${error.message.includes('duplicate') ? 'Demande déjà envoyée.' : error.message}</div>`; return; }
+  msg.innerHTML = `<div class="msg">Demande envoyée à ${target.username}.</div>`;
+  input.value = '';
+  loadCircle();
+}
+
+async function loadCircle(){
+  const uid = session.user.id;
+  const { data: circles } = await sb.from('circles').select('*').or(`requester_id.eq.${uid},addressee_id.eq.${uid}`);
+  const incoming = (circles||[]).filter(c=>c.addressee_id===uid && c.status==='pending');
+  const accepted = (circles||[]).filter(c=>c.status==='accepted');
+  const otherIds = accepted.map(c=> c.requester_id===uid ? c.addressee_id : c.requester_id);
+
+  const incomingBox = document.getElementById('incomingRequests');
+  if(incoming.length){
+    const ids = incoming.map(c=>c.requester_id);
+    const { data: people } = await sb.from('profiles').select('id,username,avatar_color').in('id', ids);
+    incomingBox.innerHTML = incoming.map(c=>{
+      const p = (people||[]).find(x=>x.id===c.requester_id) || {username:'?', avatar_color:'#888'};
+      return `<div class="friend-row">
+        <div class="avatar" style="background:${p.avatar_color}">${p.username[0].toUpperCase()}</div>
+        <div class="friend-name">${p.username}</div>
+        <div class="req-btn req-accept" onclick="respondRequest('${c.id}','accepted')">✓</div>
+        <div class="req-btn req-decline" onclick="respondRequest('${c.id}','decline')">✕</div>
+      </div>`;
+    }).join('');
+  } else { incomingBox.innerHTML = ''; }
+
+  const listBox = document.getElementById('friendsList');
+  if(otherIds.length){
+    const { data: people } = await sb.from('profiles').select('id,username,avatar_color').in('id', otherIds);
+    listBox.innerHTML = (people||[]).map(p=>`
+      <div class="friend-row">
+        <div class="avatar" style="background:${p.avatar_color}">${p.username[0].toUpperCase()}</div>
+        <div class="friend-name">${p.username}</div>
+      </div>`).join('');
+  } else {
+    listBox.innerHTML = `<div class="msg">Aucun proche pour l'instant.</div>`;
+  }
+}
+
+async function respondRequest(circleId, action){
+  if(action === 'decline'){ await sb.from('circles').delete().eq('id', circleId); }
+  else { await sb.from('circles').update({ status:'accepted' }).eq('id', circleId); }
+  loadCircle();
+}
+
+/* ---------- Fil ---------- */
+async function loadFeed(){
+  const feed = document.getElementById('feed');
+  const { data: posts, error } = await sb.from('posts').select('*').order('created_at', { ascending:false }).limit(30);
+  if(error){ feed.innerHTML = `<div class="msg error">${error.message}</div>`; return; }
+  if(!posts || posts.length===0){ feed.innerHTML = `<div class="empty">Rien à afficher pour l'instant.<br>Publiez un moment, ou ajoutez un proche.</div>`; return; }
+  const authorIds = [...new Set(posts.map(p=>p.author_id))];
+  const { data: authors } = await sb.from('profiles').select('id,username,avatar_color').in('id', authorIds);
+  const authorMap = Object.fromEntries((authors||[]).map(a=>[a.id,a]));
+  feed.innerHTML = posts.map(p=>{
+    const a = authorMap[p.author_id] || {username:'?', avatar_color:'#888'};
+    const date = new Date(p.created_at).toLocaleDateString('fr-FR', { day:'numeric', month:'short' });
+    return `<div class="card post">
+      <img src="${p.media_url}">
+      <div class="post-body">
+        <div class="post-author">
+          <div class="avatar" style="width:24px;height:24px;font-size:11px;background:${a.avatar_color}">${a.username[0].toUpperCase()}</div>
+          <b>${a.username}</b>
+          <div class="post-date">${date}</div>
+        </div>
+        ${p.caption ? `<div class="post-caption">${p.caption}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+sb.auth.onAuthStateChange(()=>{ render(); });
+render();
+</script>
+</body>
+</html>
