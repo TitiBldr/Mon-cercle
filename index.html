@@ -165,6 +165,52 @@
   .camera-preview-actions{display:flex; gap:10px; margin-top:6px;}
   .camera-preview-actions button{flex:1;}
   .ghost-btn{background:transparent !important; border:1px solid var(--line); color:var(--ink-soft) !important;}
+
+  /* ---- Story plein écran (mois) ---- */
+  .story-overlay{position:fixed; inset:0; background:#000; z-index:300; display:none; flex-direction:column;}
+  .story-overlay.open{display:flex;}
+  .story-bars{display:flex; gap:4px; padding:10px 10px 0;}
+  .story-bars .bar{flex:1; height:2.5px; background:rgba(255,255,255,0.3); border-radius:2px; overflow:hidden;}
+  .story-bars .bar .fill{height:100%; width:0%; background:#fff;}
+  .story-bars .bar.done .fill{width:100%;}
+  .story-bars .bar.active .fill{animation:fillbar 3s linear forwards;}
+  @keyframes fillbar{from{width:0%;} to{width:100%;}}
+  .story-head{display:flex; align-items:center; gap:10px; padding:12px 14px;}
+  .story-name{color:#fff; font-size:13.5px; font-weight:600; text-transform:capitalize;}
+  .story-close{margin-left:auto; color:#fff; font-size:20px; cursor:pointer; padding:4px;}
+  .story-photo{flex:1; display:flex; align-items:center; justify-content:center; position:relative; background:#111;}
+  .story-photo img, .story-photo video{max-width:100%; max-height:100%; object-fit:contain;}
+  .story-taps{position:absolute; inset:0; display:flex;}
+  .story-taps div{flex:1;}
+  .story-caption{
+    position:absolute; left:0; right:0; bottom:0; z-index:2; color:#fff; font-size:13px; line-height:1.45;
+    padding:16px 16px 20px; cursor:pointer;
+    background:linear-gradient(to top, rgba(0,0,0,0.65), rgba(0,0,0,0));
+  }
+  .story-caption.expanded{ top:0; background:rgba(0,0,0,0.55); display:flex; align-items:center; padding:24px; }
+  .story-caption .more{color:rgba(255,255,255,0.7); font-weight:600; text-decoration:underline;}
+
+  /* ---- Menu d'action (appui long) ---- */
+  .action-sheet-backdrop{position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:400; display:none; align-items:flex-end;}
+  .action-sheet-backdrop.open{display:flex;}
+  .action-sheet{width:100%; max-width:480px; margin:0 auto; background:var(--paper); border-radius:16px 16px 0 0; padding:14px; padding-bottom:26px;}
+  .action-sheet-label{text-align:center; font-family:'Fraunces',serif; font-style:italic; color:var(--ink-soft); font-size:12.5px; margin-bottom:10px; text-transform:capitalize;}
+  .action-sheet-btn{text-align:center; padding:13px; font-weight:600; font-size:15px; border-radius:10px; cursor:pointer; color:var(--week);}
+  .action-sheet-btn.cancel{color:var(--ink-soft); margin-top:6px;}
+  .action-sheet-btn:active{background:var(--bg);}
+
+  /* ---- Éditeur galerie : ajouter / supprimer / réordonner ---- */
+  .editor-row{display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); touch-action:none;}
+  .editor-row.dragging{opacity:0.5;}
+  .editor-handle{font-size:18px; color:var(--ink-soft); cursor:grab; padding:6px; touch-action:none;}
+  .editor-thumb{width:64px; height:64px; border-radius:8px; overflow:hidden; background:#eee; flex-shrink:0;}
+  .editor-thumb img, .editor-thumb video{width:100%; height:100%; object-fit:cover;}
+  .editor-del{margin-left:auto; width:28px; height:28px; border-radius:50%; background:var(--paper); border:1px solid var(--line); color:var(--ink-soft); display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:13px;}
+  .editor-info{flex:1; min-width:0; cursor:pointer;}
+  .editor-caption{font-size:12.5px; color:var(--ink); line-height:1.4; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;}
+  .editor-caption.placeholder{color:var(--ink-soft); font-style:italic; font-family:'Fraunces',serif;}
+  .caption-panel-media{width:100%; border-radius:10px; overflow:hidden; margin-bottom:12px; background:#000;}
+  .caption-panel-media img, .caption-panel-media video{width:100%; max-height:50vh; object-fit:contain; display:block;}
 </style>
 </head>
 <body>
@@ -270,7 +316,7 @@ async function renderApp(){
             <path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>
           </svg>
         </div>
-        <div class="circle-logo" onclick="document.getElementById('circleCard').scrollIntoView({behavior:'smooth'})">
+        <div class="circle-logo" onclick="openCircleModal()">
           <img src="${CERCLE_LOGO}" alt="Mon cercle">
         </div>
       </div>
@@ -284,18 +330,6 @@ async function renderApp(){
       </div>
 
       <main>
-        <div class="eyebrow">Partager un moment</div>
-        <div class="card">
-          <label class="upload-zone">
-            <b>+ Ajouter une photo</b>
-            <span id="fileLabel">Touchez ici pour choisir dans votre galerie</span>
-            <input type="file" id="photoInput" accept="image/*" onchange="onFilePicked(this)">
-          </label>
-          <textarea id="captionInput" rows="2" placeholder="Un mot sur ce moment (optionnel)"></textarea>
-          <button id="postBtn">Publier</button>
-          <div id="postMsg"></div>
-        </div>
-
         <div class="eyebrow">Mon album des mois</div>
         <div class="book-wrap">
           <div class="book">
@@ -305,20 +339,6 @@ async function renderApp(){
           </div>
           <div class="turn-hint">‹ glissez la page pour tourner ›</div>
         </div>
-
-        <div class="eyebrow">Mon cercle</div>
-        <div class="card" id="circleCard">
-          <div class="row" style="margin-bottom:10px;">
-            <input id="addFriendInput" placeholder="Ajouter par nom d'utilisateur">
-            <button id="addFriendBtn">Ajouter</button>
-          </div>
-          <div id="friendMsg"></div>
-          <div id="incomingRequests"></div>
-          <div id="friendsList"></div>
-        </div>
-
-        <div class="eyebrow">Le fil de vos proches</div>
-        <div id="feed"></div>
       </main>
 
       <!-- Modal caméra / story -->
@@ -343,34 +363,76 @@ async function renderApp(){
         </div>
       </div>
 
-      <!-- Modal mois de l'album -->
-      <div class="modal-overlay" id="monthModal">
+      <!-- Menu d'action (appui long sur une tuile) -->
+      <div class="action-sheet-backdrop" id="actionSheet" onclick="if(event.target===this)closeActionSheet()">
+        <div class="action-sheet">
+          <div class="action-sheet-label" id="actionSheetTitle"></div>
+          <div class="action-sheet-btn" onclick="actionSheetModify()">Modifier</div>
+          <div class="action-sheet-btn cancel" onclick="closeActionSheet()">Annuler</div>
+        </div>
+      </div>
+
+      <!-- Story plein écran d'un mois -->
+      <div class="story-overlay" id="monthStoryOverlay">
+        <div class="story-bars" id="monthStoryBars"></div>
+        <div class="story-head">
+          <div class="story-name" id="monthStoryTitle"></div>
+          <div class="story-close" onclick="closeMonthStory()">✕</div>
+        </div>
+        <div class="story-photo" id="monthStoryMedia"></div>
+      </div>
+
+      <!-- Éditeur galerie du mois -->
+      <div class="modal-overlay" id="editorModal">
         <div class="modal-head">
-          <div class="modal-back" onclick="closeMonthModal()">‹</div>
-          <div class="modal-title" id="monthModalTitle"></div>
+          <div class="modal-back" onclick="closeMonthEditor()">‹</div>
+          <div class="modal-title" id="editorTitle"></div>
         </div>
         <div class="modal-body">
           <label class="upload-zone">
-            <b>+ Ajouter des photos ou vidéos</b>
+            <b>+ Ajouter une photo ou vidéo</b>
             <span>Pour ce mois</span>
-            <input type="file" accept="image/*,video/*" multiple id="monthUploadInput" onchange="handleMonthUpload(this.files)">
+            <input type="file" accept="image/*,video/*" id="editorUploadInput" onchange="onEditorFilePicked(this.files[0])">
           </label>
-          <div id="monthMsg"></div>
-          <div class="month-grid" id="monthGrid"></div>
+          <div id="editorMsg"></div>
+          <div id="editorList"></div>
+        </div>
+      </div>
+
+      <!-- Panneau de légende (ajout / modification) -->
+      <div class="modal-overlay" id="captionPanel">
+        <div class="modal-head">
+          <div class="modal-back" onclick="closeCaptionPanel()">‹</div>
+          <div class="modal-title">Un mot sur ce moment</div>
+        </div>
+        <div class="modal-body">
+          <div class="caption-panel-media" id="captionPanelMedia"></div>
+          <textarea id="captionPanelInput" rows="3" placeholder="Un mot sur ce moment (optionnel)"></textarea>
+          <button id="captionPanelBtn" onclick="confirmCaptionPanel()">Ajouter</button>
+        </div>
+      </div>
+
+      <!-- Modal Mon cercle -->
+      <div class="modal-overlay" id="circleModal">
+        <div class="modal-head">
+          <div class="modal-back" onclick="closeCircleModal()">‹</div>
+          <div class="modal-title">Mon cercle</div>
+        </div>
+        <div class="modal-body">
+          <div class="row" style="margin-bottom:10px;">
+            <input id="addFriendInput" placeholder="Ajouter par nom d'utilisateur">
+            <button id="addFriendBtn">Ajouter</button>
+          </div>
+          <div id="friendMsg"></div>
+          <div id="incomingRequests"></div>
+          <div id="friendsList"></div>
         </div>
       </div>
     </div>`;
 
-  document.getElementById('postBtn').onclick = handlePost;
   document.getElementById('addFriendBtn').onclick = handleAddFriend;
   loadCircle();
-  loadFeed();
   loadAlbum();
-}
-
-function onFilePicked(input){
-  const label = document.getElementById('fileLabel');
-  label.textContent = input.files[0] ? input.files[0].name : 'Touchez ici pour choisir dans votre galerie';
 }
 
 async function signOut(){ await sb.auth.signOut(); render(); }
@@ -390,24 +452,14 @@ async function publishMedia(file, caption, postDateISO){
   return { error: null };
 }
 
-/* ---------- Publication (depuis la galerie) ---------- */
-async function handlePost(){
-  const fileInput = document.getElementById('photoInput');
-  const caption = document.getElementById('captionInput').value.trim();
-  const msg = document.getElementById('postMsg');
-  const file = fileInput.files[0];
-  if(!file){ msg.innerHTML = `<div class="msg error">Choisissez une photo.</div>`; return; }
-  msg.innerHTML = `<div class="msg">Envoi en cours…</div>`;
-  const { error } = await publishMedia(file, caption, todayISO());
-  if(error){ msg.innerHTML = `<div class="msg error">${error}</div>`; return; }
-  msg.innerHTML = `<div class="msg">Publié !</div>`;
-  fileInput.value = ''; document.getElementById('fileLabel').textContent = 'Touchez ici pour choisir dans votre galerie';
-  document.getElementById('captionInput').value = '';
-  loadFeed();
-  loadAlbum();
+/* ---------- Mon cercle (modal) ---------- */
+function openCircleModal(){
+  loadCircle();
+  document.getElementById('circleModal').classList.add('open');
 }
-
-/* ---------- Cercle ---------- */
+function closeCircleModal(){
+  document.getElementById('circleModal').classList.remove('open');
+}
 async function handleAddFriend(){
   const input = document.getElementById('addFriendInput');
   const msg = document.getElementById('friendMsg');
@@ -465,34 +517,6 @@ async function respondRequest(circleId, action){
   loadCircle();
 }
 
-/* ---------- Fil ---------- */
-async function loadFeed(){
-  const feed = document.getElementById('feed');
-  const nineDaysAgo = new Date(); nineDaysAgo.setDate(nineDaysAgo.getDate()-9);
-  const cutoff = nineDaysAgo.toISOString().slice(0,10);
-  const { data: posts, error } = await sb.from('posts').select('*').gte('post_date', cutoff).order('created_at', { ascending:false }).limit(30);
-  if(error){ feed.innerHTML = `<div class="msg error">${error.message}</div>`; return; }
-  if(!posts || posts.length===0){ feed.innerHTML = `<div class="empty">Rien à afficher pour l'instant.<br>Publiez un moment, ou ajoutez un proche.</div>`; return; }
-  const authorIds = [...new Set(posts.map(p=>p.author_id))];
-  const { data: authors } = await sb.from('profiles').select('id,username,avatar_color').in('id', authorIds);
-  const authorMap = Object.fromEntries((authors||[]).map(a=>[a.id,a]));
-  feed.innerHTML = posts.map(p=>{
-    const a = authorMap[p.author_id] || {username:'?', avatar_color:'#888'};
-    const date = new Date(p.created_at).toLocaleDateString('fr-FR', { day:'numeric', month:'short' });
-    return `<div class="card post">
-      <div class="post-photo"><div class="tape"></div><img src="${p.media_url}"></div>
-      <div class="post-body">
-        <div class="post-author">
-          <div class="avatar" style="width:24px;height:24px;font-size:11px;background:${a.avatar_color}">${a.username[0].toUpperCase()}</div>
-          <b>${a.username}</b>
-          <div class="post-date">${date}</div>
-        </div>
-        ${p.caption ? `<div class="post-caption">${p.caption}</div>` : ''}
-      </div>
-    </div>`;
-  }).join('');
-}
-
 sb.auth.onAuthStateChange(()=>{ render(); });
 render();
 
@@ -500,12 +524,14 @@ render();
 const monthsFR = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
 let albumState = null;
 
+const MIN_YEAR_BACK = 15;
+
 async function loadAlbum(){
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth();
 
-  const { data: myPosts } = await sb.from('posts').select('media_url,media_type,post_date').eq('author_id', session.user.id).order('post_date');
+  const { data: myPosts } = await sb.from('posts').select('id,media_url,media_type,post_date,sort_order,caption').eq('author_id', session.user.id).order('sort_order').order('created_at');
   const byYM = {};
   (myPosts||[]).forEach(p=>{
     const [y,m] = p.post_date.split('-').map(Number);
@@ -514,9 +540,8 @@ async function loadAlbum(){
     byYM[key].push(p);
   });
 
-  const years = new Set([currentYear]);
-  Object.keys(byYM).forEach(k=>years.add(parseInt(k.split('-')[0])));
-  const available = Array.from(years).sort((a,b)=>a-b);
+  const available = [];
+  for(let y=currentYear-MIN_YEAR_BACK; y<=currentYear; y++){ available.push(y); }
 
   const pageEl = document.getElementById('albumPage');
   albumState = { byYM, currentYear, currentMonth, available, current: currentYear, pageEl, animating:false };
@@ -532,18 +557,19 @@ function tileHTML(year, m){
   const cover = arr[0];
   const rot = [-2,1.5,-1,2,-1.5,1][m%6];
   const countBadge = arr.length>1 ? `<div class="mini-count">${arr.length}</div>` : '';
+  const handlers = `onpointerdown="tileDown(${year},${m})" onpointerup="tileUp(${year},${m})" onpointerleave="tileCancel()" onpointercancel="tileCancel()"`;
   if(cover){
     const media = cover.media_type==='video'
       ? `<video class="mini-photo" src="${cover.media_url}"></video>`
       : `<img class="mini-photo" src="${cover.media_url}">`;
-    return `<div class="mini-frame" style="transform:rotate(${rot}deg)" onclick="openMonthModal(${year},${m})">
+    return `<div class="mini-frame" style="transform:rotate(${rot}deg)" ${handlers}>
       <div class="mini-tape"></div>
       ${media}
       ${countBadge}
       <div class="mini-caption">${monthsFR[m]}</div>
     </div>`;
   }
-  return `<div class="mini-frame" style="transform:rotate(${rot}deg); opacity:0.6;" onclick="openMonthModal(${year},${m})">
+  return `<div class="mini-frame" style="transform:rotate(${rot}deg); opacity:0.6;" ${handlers}>
     <div class="mini-photo-empty"></div>
     <div class="mini-caption">${monthsFR[m]}</div>
   </div>`;
@@ -641,47 +667,240 @@ function attachAlbumSwipe(state){
   }, {passive:true});
 }
 
-/* ---------- Modal : ajouter des photos à un mois passé ---------- */
-let currentMonthTarget = null;
-function openMonthModal(year, month){
-  currentMonthTarget = { year, month };
-  document.getElementById('monthModalTitle').textContent = monthsFR[month] + ' ' + year;
-  document.getElementById('monthMsg').innerHTML = '';
-  renderMonthGrid();
-  document.getElementById('monthModal').classList.add('open');
+/* ---------- Appui court (story) / appui long (menu Modifier) sur une tuile ---------- */
+let tileTimer = null, tileTriggered = false, tileTarget = null;
+function tileDown(year, month){
+  tileTriggered = false;
+  tileTarget = { year, month };
+  tileTimer = setTimeout(()=>{ tileTriggered = true; openActionSheet(year, month); }, 480);
 }
-function closeMonthModal(){
-  document.getElementById('monthModal').classList.remove('open');
-  currentMonthTarget = null;
-}
-function renderMonthGrid(){
-  const { year, month } = currentMonthTarget;
-  const arr = albumState.byYM[year+'-'+month] || [];
-  const grid = document.getElementById('monthGrid');
-  grid.innerHTML = arr.map(p =>
-    p.media_type === 'video'
-      ? `<div class="month-item"><video src="${p.media_url}" controls></video></div>`
-      : `<div class="month-item"><img src="${p.media_url}"></div>`
-  ).join('');
-}
-async function handleMonthUpload(fileList){
-  const files = Array.from(fileList || []);
-  if(files.length === 0) return;
-  const msg = document.getElementById('monthMsg');
-  msg.innerHTML = `<div class="msg">Envoi en cours…</div>`;
-  const { year, month } = currentMonthTarget;
-  const postDateISO = `${year}-${String(month+1).padStart(2,'0')}-15`;
-  for(const file of files){
-    const { error } = await publishMedia(file, '', postDateISO);
-    if(error){ msg.innerHTML = `<div class="msg error">${error}</div>`; return; }
+function tileUp(year, month){
+  clearTimeout(tileTimer);
+  if(!tileTriggered){
+    const arr = albumState.byYM[year+'-'+month] || [];
+    if(arr.length){ openMonthStory(year, month); }
+    else { openMonthEditor(year, month); }
   }
-  msg.innerHTML = `<div class="msg">Ajouté !</div>`;
-  document.getElementById('monthUploadInput').value = '';
-  const keepYear = albumState.current;
-  await loadAlbum();
-  albumState.current = keepYear;
+}
+function tileCancel(){ clearTimeout(tileTimer); }
+
+function openActionSheet(year, month){
+  document.getElementById('actionSheetTitle').textContent = monthsFR[month] + ' ' + year;
+  document.getElementById('actionSheet').classList.add('open');
+}
+function closeActionSheet(){ document.getElementById('actionSheet').classList.remove('open'); }
+function actionSheetModify(){
+  const { year, month } = tileTarget;
+  closeActionSheet();
+  openMonthEditor(year, month);
+}
+
+/* ---------- Story plein écran pour un mois ---------- */
+let monthStoryState = null;
+function openMonthStory(year, month){
+  const posts = albumState.byYM[year+'-'+month] || [];
+  if(!posts.length) return;
+  monthStoryState = { year, month, posts, index:0, timer:null, captionExpanded:false };
+  document.getElementById('monthStoryTitle').textContent = monthsFR[month] + ' ' + year;
+  document.getElementById('monthStoryOverlay').classList.add('open');
+  renderMonthStory();
+}
+function closeMonthStory(){
+  if(monthStoryState){ clearTimeout(monthStoryState.timer); }
+  document.getElementById('monthStoryOverlay').classList.remove('open');
+  document.getElementById('monthStoryMedia').innerHTML = '';
+  monthStoryState = null;
+}
+function firstSentence(text){
+  const m = text.match(/^.*?[.!?](?:\s|$)/);
+  const first = m ? m[0].trim() : text;
+  return { first, hasMore: first.length < text.length };
+}
+function renderMonthStory(){
+  const s = monthStoryState;
+  clearTimeout(s.timer);
+  const p = s.posts[s.index];
+  document.getElementById('monthStoryBars').innerHTML = s.posts.map((_,i)=>{
+    const cls = i<s.index ? 'done' : (i===s.index ? 'active' : '');
+    return `<div class="bar ${cls}"><div class="fill"></div></div>`;
+  }).join('');
+  const mediaBox = document.getElementById('monthStoryMedia');
+  let captionHTML = '';
+  if(p.caption){
+    const { first, hasMore } = firstSentence(p.caption);
+    captionHTML = `<div class="story-caption ${s.captionExpanded?'expanded':''}" onclick="event.stopPropagation(); toggleMonthStoryCaption();">
+      ${s.captionExpanded ? p.caption : first + (hasMore ? ' <span class="more">plus</span>' : '')}
+    </div>`;
+  }
+  const tapsHTML = `<div class="story-taps"><div onclick="monthStoryPrev()"></div><div onclick="monthStoryNext()"></div></div>`;
+  if(p.media_type==='video'){
+    mediaBox.innerHTML = `<video src="${p.media_url}" autoplay playsinline></video>${tapsHTML}${captionHTML}`;
+    const v = mediaBox.querySelector('video');
+    v.onended = ()=>monthStoryNext();
+  } else {
+    mediaBox.innerHTML = `<img src="${p.media_url}">${tapsHTML}${captionHTML}`;
+    if(!s.captionExpanded){ s.timer = setTimeout(()=>monthStoryNext(), 3000); }
+  }
+}
+function toggleMonthStoryCaption(){
+  const s = monthStoryState; if(!s) return;
+  s.captionExpanded = !s.captionExpanded;
+  renderMonthStory();
+}
+function monthStoryNext(){
+  const s = monthStoryState; if(!s) return;
+  s.captionExpanded = false;
+  if(s.index < s.posts.length-1){ s.index++; renderMonthStory(); }
+  else { closeMonthStory(); }
+}
+function monthStoryPrev(){
+  const s = monthStoryState; if(!s) return;
+  s.captionExpanded = false;
+  if(s.index>0){ s.index--; renderMonthStory(); }
+}
+
+/* ---------- Éditeur galerie : ajouter, supprimer, réordonner ---------- */
+let editorTarget = null, editorItems = [];
+let dragIdx = null, dragEl = null;
+
+function openMonthEditor(year, month){
+  editorTarget = { year, month };
+  editorItems = [...(albumState.byYM[year+'-'+month] || [])];
+  document.getElementById('editorTitle').textContent = monthsFR[month] + ' ' + year;
+  document.getElementById('editorMsg').innerHTML = '';
+  renderEditorList();
+  document.getElementById('editorModal').classList.add('open');
+}
+function closeMonthEditor(){
+  document.getElementById('editorModal').classList.remove('open');
+  albumState.byYM[editorTarget.year+'-'+editorTarget.month] = editorItems;
   renderAlbumStatic(albumState);
-  renderMonthGrid();
+  editorTarget = null;
+}
+function renderEditorList(){
+  const list = document.getElementById('editorList');
+  list.innerHTML = editorItems.map((p,i)=>{
+    const thumb = p.media_type==='video' ? `<video src="${p.media_url}"></video>` : `<img src="${p.media_url}">`;
+    const cap = p.caption ? `<div class="editor-caption">${p.caption}</div>` : `<div class="editor-caption placeholder">Ajouter un texte…</div>`;
+    return `<div class="editor-row" data-idx="${i}">
+      <div class="editor-handle" onpointerdown="startDrag(event, ${i})">☰</div>
+      <div class="editor-thumb">${thumb}</div>
+      <div class="editor-info" onclick="openEditCaption(${i})">${cap}</div>
+      <div class="editor-del" onclick="deleteEditorItem(${i})">✕</div>
+    </div>`;
+  }).join('');
+  if(editorItems.length===0){
+    list.innerHTML = `<div class="empty">Aucune photo pour l'instant.</div>`;
+  }
+}
+async function deleteEditorItem(i){
+  const item = editorItems[i];
+  const msg = document.getElementById('editorMsg');
+  msg.innerHTML = `<div class="msg">Suppression…</div>`;
+  const { error } = await sb.from('posts').delete().eq('id', item.id);
+  if(error){ msg.innerHTML = `<div class="msg error">${error.message}</div>`; return; }
+  editorItems.splice(i,1);
+  msg.innerHTML = '';
+  renderEditorList();
+}
+
+/* ---- Panneau de légende (ajout ou modification) ---- */
+let captionPanelMode = null, captionPanelFile = null, captionPanelIndex = null;
+
+function onEditorFilePicked(file){
+  if(!file) return;
+  captionPanelMode = 'add';
+  captionPanelFile = file;
+  const url = URL.createObjectURL(file);
+  document.getElementById('captionPanelMedia').innerHTML = file.type.startsWith('video')
+    ? `<video src="${url}" controls></video>` : `<img src="${url}">`;
+  document.getElementById('captionPanelInput').value = '';
+  document.getElementById('captionPanelBtn').textContent = 'Ajouter';
+  document.getElementById('captionPanel').classList.add('open');
+}
+function openEditCaption(i){
+  captionPanelMode = 'edit';
+  captionPanelIndex = i;
+  const p = editorItems[i];
+  document.getElementById('captionPanelMedia').innerHTML = p.media_type==='video'
+    ? `<video src="${p.media_url}" controls></video>` : `<img src="${p.media_url}">`;
+  document.getElementById('captionPanelInput').value = p.caption || '';
+  document.getElementById('captionPanelBtn').textContent = 'Enregistrer';
+  document.getElementById('captionPanel').classList.add('open');
+}
+function closeCaptionPanel(){
+  document.getElementById('captionPanel').classList.remove('open');
+  document.getElementById('editorUploadInput').value = '';
+  captionPanelMode = null; captionPanelFile = null; captionPanelIndex = null;
+}
+async function confirmCaptionPanel(){
+  const caption = document.getElementById('captionPanelInput').value.trim();
+  const msg = document.getElementById('editorMsg');
+  if(captionPanelMode === 'add'){
+    msg.innerHTML = `<div class="msg">Envoi en cours…</div>`;
+    const { year, month } = editorTarget;
+    const postDateISO = `${year}-${String(month+1).padStart(2,'0')}-15`;
+    const nextOrder = editorItems.reduce((mx,p)=>Math.max(mx, p.sort_order||0), 0) + 1;
+    const file = captionPanelFile;
+    const mediaType = file.type && file.type.startsWith('video') ? 'video' : 'photo';
+    const path = `${session.user.id}/${Date.now()}_${file.name}`;
+    const { error: upErr } = await sb.storage.from('photos').upload(path, file);
+    if(upErr){ msg.innerHTML = `<div class="msg error">${upErr.message}</div>`; return; }
+    const { data: pub } = sb.storage.from('photos').getPublicUrl(path);
+    const { data: inserted, error: insErr } = await sb.from('posts').insert({
+      author_id: session.user.id, media_url: pub.publicUrl, media_type: mediaType, caption, post_date: postDateISO, sort_order: nextOrder
+    }).select().single();
+    if(insErr){ msg.innerHTML = `<div class="msg error">${insErr.message}</div>`; return; }
+    editorItems.push(inserted);
+    msg.innerHTML = `<div class="msg">Ajouté !</div>`;
+  } else if(captionPanelMode === 'edit'){
+    const item = editorItems[captionPanelIndex];
+    msg.innerHTML = `<div class="msg">Enregistrement…</div>`;
+    const { error } = await sb.from('posts').update({ caption }).eq('id', item.id);
+    if(error){ msg.innerHTML = `<div class="msg error">${error.message}</div>`; return; }
+    item.caption = caption;
+    msg.innerHTML = '';
+  }
+  closeCaptionPanel();
+  renderEditorList();
+}
+
+function startDrag(e, idx){
+  dragIdx = idx;
+  dragEl = e.target.closest('.editor-row');
+  dragEl.classList.add('dragging');
+  try{ e.target.setPointerCapture(e.pointerId); }catch(err){}
+  document.addEventListener('pointermove', onDragMove);
+  document.addEventListener('pointerup', onDragEnd);
+}
+function onDragMove(e){
+  if(dragIdx===null) return;
+  const rows = Array.from(document.querySelectorAll('.editor-row'));
+  for(const row of rows){
+    const rect = row.getBoundingClientRect();
+    const mid = rect.top + rect.height/2;
+    const idx = parseInt(row.dataset.idx,10);
+    if(idx!==dragIdx && e.clientY>=rect.top && e.clientY<=rect.bottom){
+      const moved = editorItems.splice(dragIdx,1)[0];
+      editorItems.splice(idx,0,moved);
+      dragIdx = idx;
+      renderEditorList();
+      const newDragEl = document.querySelector(`.editor-row[data-idx="${dragIdx}"]`);
+      if(newDragEl) newDragEl.classList.add('dragging');
+      break;
+    }
+  }
+}
+async function onDragEnd(){
+  document.removeEventListener('pointermove', onDragMove);
+  document.removeEventListener('pointerup', onDragEnd);
+  dragIdx = null;
+  const updates = editorItems.map((p,i)=>({ id:p.id, sort_order:i }));
+  for(const u of updates){
+    await sb.from('posts').update({ sort_order: u.sort_order }).eq('id', u.id);
+  }
+  editorItems.forEach((p,i)=>p.sort_order=i);
+  renderEditorList();
 }
 
 /* ---------- Caméra / story en direct ---------- */
@@ -748,7 +967,6 @@ async function publishCameraCapture(){
   const { error } = await publishMedia(capturedFile, caption, todayISO());
   if(error){ msg.innerHTML = `<div class="msg error">${error}</div>`; return; }
   closeCamera();
-  loadFeed();
   loadAlbum();
 }
 </script>
