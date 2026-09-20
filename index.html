@@ -125,7 +125,7 @@
   .leaf-year::before, .leaf-year::after{content:""; flex:1; height:1px; background:var(--ink-soft); opacity:0.4;}
   .gutter{width:11px; flex-shrink:0; background:linear-gradient(to right, rgba(38,48,43,0.16), rgba(38,48,43,0.02) 40%, rgba(38,48,43,0.02) 60%, rgba(38,48,43,0.16));}
   .grid6{display:grid; grid-template-columns:repeat(2,1fr); gap:14px 8px;}
-  .mini-frame{width:100%; position:relative; background:#fff; border-radius:2px; padding:4px 4px 18px; box-shadow:0 4px 9px rgba(38,48,43,0.2);}
+  .mini-frame{width:100%; position:relative; background:#fff; border-radius:2px; padding:4px 4px 18px; box-shadow:0 4px 9px rgba(38,48,43,0.2); touch-action:manipulation;}
   .mini-photo, .mini-photo-empty{width:100%; aspect-ratio:4/5; border-radius:1px; display:block; object-fit:cover; background:#EFEBE0;}
   .mini-frame .mini-caption{position:absolute; left:2px; right:2px; bottom:4px; text-align:center; font-family:'Fraunces',serif; font-style:italic; font-size:9px; color:var(--ink-soft); text-transform:capitalize;}
   .mini-frame.not-started{background:transparent; box-shadow:none; padding:0;}
@@ -392,7 +392,7 @@ async function renderApp(){
           <label class="upload-zone">
             <b>+ Ajouter une photo ou vidéo</b>
             <span>Pour ce mois</span>
-            <input type="file" accept="image/*,video/*" id="editorUploadInput" onchange="onEditorFilePicked(this.files[0])">
+            <input type="file" accept="image/*,video/*" multiple id="editorUploadInput" onchange="onEditorFilesPicked(this.files)">
           </label>
           <div id="editorMsg"></div>
           <div id="editorList"></div>
@@ -651,7 +651,7 @@ function flipAlbumTo(state, newYear){
 function attachAlbumSwipe(state){
   let startX = null;
   const el = state.pageEl;
-  el.addEventListener('pointerdown', e=>{ startX = e.clientX; try{el.setPointerCapture(e.pointerId);}catch(err){} });
+  el.addEventListener('pointerdown', e=>{ startX = e.clientX; });
   el.addEventListener('pointerup', e=>{
     if(startX===null) return;
     const dx = e.clientX - startX;
@@ -806,16 +806,27 @@ async function deleteEditorItem(i){
 
 /* ---- Panneau de légende (ajout ou modification) ---- */
 let captionPanelMode = null, captionPanelFile = null, captionPanelIndex = null;
+let captionQueue = [];
+let editorQueueDone = 0;
 
-function onEditorFilePicked(file){
-  if(!file) return;
+function onEditorFilesPicked(fileList){
+  const files = Array.from(fileList || []);
+  if(files.length===0) return;
+  captionQueue = files;
+  editorQueueDone = 0;
+  showNextQueuedFile();
+}
+function showNextQueuedFile(){
+  if(captionQueue.length===0){ closeCaptionPanel(); renderEditorList(); return; }
+  const file = captionQueue[0];
   captionPanelMode = 'add';
   captionPanelFile = file;
   const url = URL.createObjectURL(file);
   document.getElementById('captionPanelMedia').innerHTML = file.type.startsWith('video')
     ? `<video src="${url}" controls></video>` : `<img src="${url}">`;
   document.getElementById('captionPanelInput').value = '';
-  document.getElementById('captionPanelBtn').textContent = 'Ajouter';
+  document.getElementById('captionPanelBtn').textContent = captionQueue.length>1
+    ? `Ajouter (reste ${captionQueue.length})` : 'Ajouter';
   document.getElementById('captionPanel').classList.add('open');
 }
 function openEditCaption(i){
@@ -832,6 +843,7 @@ function closeCaptionPanel(){
   document.getElementById('captionPanel').classList.remove('open');
   document.getElementById('editorUploadInput').value = '';
   captionPanelMode = null; captionPanelFile = null; captionPanelIndex = null;
+  captionQueue = []; editorQueueDone = 0;
 }
 async function confirmCaptionPanel(){
   const caption = document.getElementById('captionPanelInput').value.trim();
@@ -852,7 +864,10 @@ async function confirmCaptionPanel(){
     }).select().single();
     if(insErr){ msg.innerHTML = `<div class="msg error">${insErr.message}</div>`; return; }
     editorItems.push(inserted);
+    editorQueueDone++;
+    captionQueue.shift();
     msg.innerHTML = `<div class="msg">Ajouté !</div>`;
+    if(captionQueue.length>0){ showNextQueuedFile(); renderEditorList(); return; }
   } else if(captionPanelMode === 'edit'){
     const item = editorItems[captionPanelIndex];
     msg.innerHTML = `<div class="msg">Enregistrement…</div>`;
