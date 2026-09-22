@@ -253,6 +253,18 @@
   .pe-color{width:30px; height:30px; border-radius:50%; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.2);}
   .pe-colorbar{position:absolute; left:10px; top:16px; bottom:16px; width:26px; display:none; z-index:5;}
   .pe-canvas-wrap.show-colorbar .pe-colorbar{display:block;}
+  .pe-text-tap{position:absolute; inset:0; pointer-events:none; cursor:text;}
+  .pe-canvas-wrap.tool-text .pe-text-tap{pointer-events:auto;}
+  .pe-text-input{
+    position:absolute; background:transparent; border:1.5px dashed rgba(255,255,255,0.8); color:#fff;
+    font-family:'Fraunces',serif; font-style:italic; font-weight:600; font-size:16px; padding:5px 8px;
+    min-width:60px; outline:none; resize:none; overflow:hidden; z-index:6; pointer-events:auto;
+  }
+  .pe-filter-label{
+    position:absolute; top:14px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.5); color:#fff;
+    font-size:12px; font-weight:600; padding:6px 14px; border-radius:16px; opacity:0; transition:opacity 0.25s; z-index:4; pointer-events:none;
+  }
+  .pe-filter-label.show{opacity:1;}
   .pe-colorbar-track{position:absolute; inset:0; border-radius:13px; background:linear-gradient(180deg,#ff0000,#ffea00,#22ff00,#00e5ff,#0033ff,#c400ff,#ff0000); box-shadow:0 0 0 2px rgba(255,255,255,0.55);}
   .pe-colorbar-handle{position:absolute; left:50%; top:0; width:26px; height:26px; margin-left:-13px; margin-top:-13px; border-radius:50%; background:#fff; border:3px solid #fff; box-shadow:0 1px 5px rgba(0,0,0,0.45); cursor:grab; touch-action:none;}
   .pe-hint{font-size:11.5px; color:var(--ink-soft); font-style:italic; font-family:'Fraunces',serif; line-height:1.5; margin-top:4px;}
@@ -454,27 +466,23 @@ async function renderApp(){
             <div class="pe-canvas-wrap" id="peCanvasWrap">
               <canvas id="peCanvas"></canvas>
               <canvas id="peDrawCanvas"></canvas>
+              <div class="pe-text-tap" id="peTextTapLayer"></div>
               <div class="pe-stamp-layer" id="peStampLayer"></div>
               <div class="pe-colorbar" id="peColorbar">
                 <div class="pe-colorbar-track"></div>
                 <div class="pe-colorbar-handle" id="peColorbarHandle"></div>
               </div>
+              <div class="pe-filter-label" id="peFilterLabel"></div>
               <div class="pe-toolbar">
                 <div class="pe-tool active" data-tab="filters" onclick="peSwitchTab('filters')">🎨</div>
                 <div class="pe-tool" data-tab="crop" onclick="peSwitchTab('crop')">✂️</div>
-                <div class="pe-tool" data-tab="draw" onclick="peSwitchTab('draw')">✏️</div>
-                <div class="pe-tool" data-tab="info" onclick="peSwitchTab('info')">📍</div>
+                <div class="pe-tool" data-tab="text" onclick="peSwitchTab('text')">✏️</div>
+                <div class="pe-tool" data-tab="draw" onclick="peSwitchTab('draw')">🖌️</div>
+                <div class="pe-tool" data-tab="location" onclick="peSwitchTab('location')">📍</div>
+                <div class="pe-tool" data-tab="time" onclick="peSwitchTab('time')">🕐</div>
               </div>
             </div>
-            <div class="pe-panel" id="pePanelFilters">
-              <div class="pe-row">
-                <div class="pe-btn" onclick="peApplyFilter('none')">Normal</div>
-                <div class="pe-btn" onclick="peApplyFilter('grayscale')">N&B</div>
-                <div class="pe-btn" onclick="peApplyFilter('sepia')">Sépia</div>
-                <div class="pe-btn" onclick="peApplyFilter('vivid')">Vif</div>
-                <div class="pe-btn" onclick="peApplyFilter('contrast')">Contraste</div>
-              </div>
-            </div>
+            <div class="pe-panel" id="pePanelFilters" style="display:none;"></div>
             <div class="pe-panel" id="pePanelCrop" style="display:none;">
               <div class="pe-row">
                 <div class="pe-btn" onclick="peCrop('original')">Original</div>
@@ -483,6 +491,7 @@ async function renderApp(){
                 <div class="pe-btn" onclick="peRotate()">⟳ Pivoter</div>
               </div>
             </div>
+            <div class="pe-panel" id="pePanelText" style="display:none;"></div>
             <div class="pe-panel" id="pePanelDraw" style="display:none;">
               <div class="pe-row">
                 <div class="pe-color" style="background:#26302B" onclick="peSetColor('#26302B')"></div>
@@ -493,21 +502,24 @@ async function renderApp(){
                 <div class="pe-btn" onclick="peClearDrawing()">Effacer</div>
               </div>
             </div>
-            <div class="pe-panel" id="pePanelInfo" style="display:none;">
+            <div class="pe-panel" id="pePanelLocation" style="display:none;">
               <div class="pe-row" style="margin-bottom:8px;">
                 <div class="pe-btn" onclick="peUseLocation()">📍 Ma position</div>
-                <div class="pe-btn" onclick="peUseNow()">🕐 Heure actuelle</div>
               </div>
               <div class="row" style="margin-bottom:6px;">
                 <input id="peLocationInput" placeholder="Lieu (optionnel)">
                 <button style="width:auto; padding:0 14px;" onclick="peAddLocationStamp()">+</button>
               </div>
+              <div id="peLocationMsg" class="msg"></div>
+            </div>
+            <div class="pe-panel" id="pePanelTime" style="display:none;">
+              <div class="pe-row" style="margin-bottom:8px;">
+                <div class="pe-btn" onclick="peUseNow()">🕐 Heure actuelle</div>
+              </div>
               <div class="row" style="margin-bottom:6px;">
                 <input id="peTimeInput" placeholder="Heure ou date (optionnel)">
                 <button style="width:auto; padding:0 14px;" onclick="peAddTimeStamp()">+</button>
               </div>
-              <div id="peLocationMsg" class="msg"></div>
-              <div class="pe-hint">Touchez un texte posé sur la photo pour changer son style. Glissez la barre arc-en-ciel à gauche de la photo pour changer sa couleur.</div>
             </div>
           </div>
           <div id="staticMediaBlock" style="display:none;">
@@ -1256,10 +1268,11 @@ function cssFilterFor(name){
 }
 function peSwitchTab(name){
   document.querySelectorAll('.pe-tool').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
-  ['filters','crop','draw','info'].forEach(t=>{
+  ['filters','crop','text','draw','location','time'].forEach(t=>{
     document.getElementById('pePanel'+t.charAt(0).toUpperCase()+t.slice(1)).style.display = (t===name)?'block':'none';
   });
   if(peDrawCanvas) peDrawCanvas.classList.toggle('active', name==='draw');
+  document.getElementById('peCanvasWrap').classList.toggle('tool-text', name==='text');
   updateColorbarVisibility();
 }
 function peRedrawBase(){
@@ -1300,7 +1313,40 @@ function syncStampLayer(){
   layer.style.width = canvasRect.width + 'px';
   layer.style.height = canvasRect.height + 'px';
 }
+const PE_FILTER_ORDER = ['none','grayscale','sepia','vivid','contrast'];
+const PE_FILTER_NAMES = { none:'Normal', grayscale:'Noir et blanc', sepia:'Sépia', vivid:'Vif', contrast:'Contraste' };
 function peApplyFilter(name){ peState.filter=name; peRedrawBase(); }
+function peCycleFilter(dir){
+  const idx = PE_FILTER_ORDER.indexOf(peState.filter);
+  const next = PE_FILTER_ORDER[(idx+dir+PE_FILTER_ORDER.length)%PE_FILTER_ORDER.length];
+  peApplyFilter(next);
+  showFilterLabel(PE_FILTER_NAMES[next]);
+}
+let peFilterLabelTimer = null;
+function showFilterLabel(text){
+  const label = document.getElementById('peFilterLabel');
+  label.textContent = text;
+  label.classList.add('show');
+  clearTimeout(peFilterLabelTimer);
+  peFilterLabelTimer = setTimeout(()=>label.classList.remove('show'), 900);
+}
+function getActiveTool(){
+  const el = document.querySelector('.pe-tool.active');
+  return el ? el.dataset.tab : null;
+}
+function attachFilterSwipe(){
+  const wrap = document.getElementById('peCanvasWrap');
+  if(wrap.dataset.swipeBound) return;
+  wrap.dataset.swipeBound = '1';
+  let startX = null;
+  wrap.addEventListener('pointerdown', e=>{ if(getActiveTool()==='filters'){ startX = e.clientX; } });
+  wrap.addEventListener('pointerup', e=>{
+    if(startX===null || getActiveTool()!=='filters') return;
+    const dx = e.clientX - startX;
+    if(Math.abs(dx) > 40){ peCycleFilter(dx<0 ? 1 : -1); }
+    startX = null;
+  });
+}
 function peCrop(mode){ peState.crop=mode; peClearAllStamps(); peRedrawBase(); }
 function peRotate(){ peState.rotation=(peState.rotation+90)%360; peClearAllStamps(); peRedrawBase(); }
 function peSetColor(c){ peColor=c; }
@@ -1445,8 +1491,11 @@ function selectStamp(id){
 }
 function updateColorbarVisibility(){
   const wrap = document.getElementById('peCanvasWrap');
-  const onInfoTab = document.getElementById('pePanelInfo').style.display !== 'none';
-  wrap.classList.toggle('show-colorbar', !!peSelectedStampId && onInfoTab);
+  const activeTab = getActiveTool();
+  let show = false;
+  if(activeTab==='draw'){ show = true; }
+  else if(['text','location','time'].includes(activeTab) && peSelectedStampId){ show = true; }
+  wrap.classList.toggle('show-colorbar', show);
 }
 function cycleStampStyle(id){
   const s = peStamps.get(id); if(!s) return;
@@ -1467,6 +1516,7 @@ function attachStampGestures(el, id){
   let drag = null, gesture = null, downPos = null, moved = false;
   el.addEventListener('pointerdown', e=>{
     if(e.target.classList.contains('pe-stamp-delete')) return;
+    e.stopPropagation();
     selectStamp(id);
     try{ el.setPointerCapture(e.pointerId); }catch(err){}
     pointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
@@ -1524,7 +1574,9 @@ function initColorbar(){
     ratio = Math.max(0, Math.min(1, ratio));
     handle.style.top = (ratio*rect.height)+'px';
     const hue = Math.round(ratio*360);
-    if(peSelectedStampId){ setStampColor(peSelectedStampId, `hsl(${hue},85%,60%)`); }
+    const color = `hsl(${hue},85%,60%)`;
+    if(getActiveTool()==='draw'){ peColor = color; }
+    else if(peSelectedStampId){ setStampColor(peSelectedStampId, color); }
   }
   handle.addEventListener('pointerdown', e=>{ dragging=true; try{handle.setPointerCapture(e.pointerId);}catch(err){} setFromClientY(e.clientY); });
   handle.addEventListener('pointermove', e=>{ if(dragging) setFromClientY(e.clientY); });
@@ -1584,7 +1636,43 @@ function bakeOneStamp(ctx, targetWidth, id){
   }
   ctx.restore();
 }
+function initTextTapLayer(){
+  const layer = document.getElementById('peTextTapLayer');
+  layer.addEventListener('pointerdown', e=>{
+    if(e.target !== layer) return; // ne pas déclencher si on tape sur un autocollant existant
+    const layerRect = document.getElementById('peStampLayer').getBoundingClientRect();
+    const x = e.clientX - layerRect.left, y = e.clientY - layerRect.top;
+    openTextInputAt(x, y);
+  });
+}
+function openTextInputAt(x, y){
+  const existing = document.getElementById('peTextTempInput');
+  if(existing) existing.remove();
+  const box = document.createElement('textarea');
+  box.id = 'peTextTempInput';
+  box.className = 'pe-text-input';
+  box.rows = 1;
+  box.style.left = x+'px'; box.style.top = y+'px';
+  document.getElementById('peStampLayer').appendChild(box);
+  box.focus();
+  function finish(){
+    const text = box.value.trim();
+    box.remove();
+    if(text){
+      const id = 'peStamp'+(peStampSeq++);
+      peStamps.set(id, { kind:'text', text, style:'minimal', color:null, x, y, scale:1, rotation:0 });
+      renderStampEl(id);
+      selectStamp(id);
+    }
+  }
+  box.addEventListener('blur', finish);
+  box.addEventListener('keydown', e=>{
+    if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); box.blur(); }
+  });
+}
 initColorbar();
+attachFilterSwipe();
+initTextTapLayer();
 </script>
 </body>
 </html>
