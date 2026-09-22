@@ -230,8 +230,9 @@
   .pe-canvas-wrap canvas{max-width:100%; max-height:52vh; object-fit:contain;}
   .pe-stamp-layer{position:absolute; pointer-events:none;}
   .pe-stamp{
-    position:absolute; left:16px; bottom:16px; touch-action:none; cursor:grab; user-select:none;
+    position:absolute; left:0; top:0; touch-action:none; cursor:grab; user-select:none;
     pointer-events:auto; white-space:nowrap; padding:6px 10px; font-size:15px; line-height:1.2;
+    transform-origin:center center;
   }
   .pe-stamp:active{cursor:grabbing;}
   .pe-stamp.style-minimal{font-family:'Fraunces',serif; font-style:italic; font-weight:600; color:#fff; text-shadow:0 1px 4px rgba(0,0,0,0.6);}
@@ -239,11 +240,19 @@
   .pe-stamp.style-bold{font-family:'Inter',sans-serif; font-weight:800; color:#fff; text-transform:uppercase; text-shadow:0 1px 5px rgba(0,0,0,0.6); font-size:17px;}
   .pe-stamp.style-script{font-family:'Fraunces',serif; font-style:italic; font-weight:500; color:#fff; text-shadow:0 1px 5px rgba(0,0,0,0.5); font-size:19px;}
   .pe-stamp.style-stamp{font-family:'Courier New',monospace; font-weight:600; color:#F5A623;}
+  .pe-stamp-delete{
+    position:absolute; top:-11px; right:-11px; width:22px; height:22px; border-radius:50%; background:#B0413E;
+    color:#fff; font-size:11px; display:flex; align-items:center; justify-content:center; cursor:pointer;
+    box-shadow:0 1px 4px rgba(0,0,0,0.4);
+  }
   #peDrawCanvas{position:absolute; top:0; left:0; right:0; bottom:0; margin:auto; pointer-events:none; touch-action:none;}
   #peDrawCanvas.active{pointer-events:auto;}
-  .pe-tabs{display:flex; border-bottom:1px solid var(--line); margin-top:10px;}
-  .pe-tab{flex:1; text-align:center; padding:10px 4px; font-size:12px; font-weight:600; color:var(--ink-soft); cursor:pointer; border-bottom:2px solid transparent;}
-  .pe-tab.active{color:var(--ink); border-bottom-color:var(--week);}
+  .pe-toolbar{position:absolute; top:14px; right:12px; display:flex; flex-direction:column; gap:12px; z-index:5;}
+  .pe-tool{
+    width:38px; height:38px; border-radius:50%; background:rgba(0,0,0,0.4); display:flex; align-items:center;
+    justify-content:center; font-size:17px; cursor:pointer; border:1.5px solid transparent;
+  }
+  .pe-tool.active{background:rgba(255,255,255,0.92); border-color:rgba(255,255,255,0.9);}
   .pe-panel{padding:14px 16px 0;}
   .pe-row{display:flex; gap:8px; flex-wrap:wrap;}
   .pe-btn{padding:9px 14px; border-radius:10px; background:var(--paper); border:1px solid var(--line); font-size:12.5px; font-weight:600; color:var(--ink); cursor:pointer;}
@@ -472,12 +481,12 @@ async function renderApp(){
             <canvas id="peCanvas"></canvas>
             <canvas id="peDrawCanvas"></canvas>
             <div class="pe-stamp-layer" id="peStampLayer"></div>
-          </div>
-          <div class="pe-tabs">
-            <div class="pe-tab active" data-tab="filters" onclick="peSwitchTab('filters')">Effets</div>
-            <div class="pe-tab" data-tab="crop" onclick="peSwitchTab('crop')">Recadrer</div>
-            <div class="pe-tab" data-tab="draw" onclick="peSwitchTab('draw')">Dessiner</div>
-            <div class="pe-tab" data-tab="info" onclick="peSwitchTab('info')">Lieu / heure</div>
+            <div class="pe-toolbar">
+              <div class="pe-tool active" data-tab="filters" onclick="peSwitchTab('filters')">🎨</div>
+              <div class="pe-tool" data-tab="crop" onclick="peSwitchTab('crop')">✂️</div>
+              <div class="pe-tool" data-tab="draw" onclick="peSwitchTab('draw')">✏️</div>
+              <div class="pe-tool" data-tab="info" onclick="peSwitchTab('info')">📍</div>
+            </div>
           </div>
           <div class="pe-panel" id="pePanelFilters">
             <div class="pe-row">
@@ -1273,7 +1282,7 @@ function cancelPhotoEditor(){
   document.getElementById('photoEditorModal').classList.remove('open');
 }
 function peSwitchTab(name){
-  document.querySelectorAll('.pe-tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
+  document.querySelectorAll('.pe-tool').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
   ['filters','crop','draw','info'].forEach(t=>{
     document.getElementById('pePanel'+t.charAt(0).toUpperCase()+t.slice(1)).style.display = (t===name)?'block':'none';
   });
@@ -1387,6 +1396,10 @@ function peRoundRect(ctx,x,y,w,h,r){
   ctx.arcTo(x,y,x+w,y,r);
   ctx.closePath();
 }
+let peStampState = { x:0, y:0, scale:1, rotation:0 };
+let peStampPointers = new Map();
+let peStampDrag = null, peStampGesture = null;
+
 function peApplyInfoStamp(){
   const loc = document.getElementById('peLocationInput').value.trim();
   const time = document.getElementById('peTimeInput').value.trim();
@@ -1396,81 +1409,121 @@ function peApplyInfoStamp(){
   if(!el){
     el = document.createElement('div');
     el.id = 'peStampEl';
+    el.innerHTML = `<span class="pe-stamp-text"></span><span class="pe-stamp-delete" onpointerdown="event.stopPropagation()" onclick="peClearStamp()">✕</span>`;
     document.getElementById('peStampLayer').appendChild(el);
-    el.style.left = '16px'; el.style.bottom = '16px';
-    attachStampDrag(el);
+    const layerRect = document.getElementById('peStampLayer').getBoundingClientRect();
+    peStampState = { x: layerRect.width*0.5, y: layerRect.height*0.82, scale:1, rotation:0 };
+    attachStampGestures(el);
   }
   el.className = 'pe-stamp style-' + peStampStyle;
-  el.textContent = text;
+  el.querySelector('.pe-stamp-text').textContent = text;
+  applyStampTransform(el);
   document.getElementById('peLocationInput').value = '';
   document.getElementById('peTimeInput').value = '';
   document.getElementById('peLocationMsg').textContent = '';
 }
+function applyStampTransform(el){
+  el = el || document.getElementById('peStampEl');
+  if(!el) return;
+  el.style.left = peStampState.x+'px';
+  el.style.top = peStampState.y+'px';
+  el.style.transform = `translate(-50%,-50%) rotate(${peStampState.rotation}deg) scale(${peStampState.scale})`;
+}
 function peClearStamp(){
   const el = document.getElementById('peStampEl');
   if(el) el.remove();
+  peStampPointers.clear(); peStampDrag=null; peStampGesture=null;
 }
-function attachStampDrag(el){
-  let startX, startY, elStartLeft, elStartTop, dragging = false;
+function ptDistance(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+function ptAngle(a,b){ return Math.atan2(b.y-a.y, b.x-a.x) * 180/Math.PI; }
+function attachStampGestures(el){
   el.addEventListener('pointerdown', e=>{
-    dragging = true;
-    startX = e.clientX; startY = e.clientY;
-    const layerRect = document.getElementById('peStampLayer').getBoundingClientRect();
-    const elRect = el.getBoundingClientRect();
-    elStartLeft = elRect.left - layerRect.left;
-    elStartTop = elRect.top - layerRect.top;
-    el.style.bottom = 'auto';
+    if(e.target.classList.contains('pe-stamp-delete')) return;
     try{ el.setPointerCapture(e.pointerId); }catch(err){}
+    peStampPointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    if(peStampPointers.size===1){
+      peStampDrag = { id:e.pointerId, sx:e.clientX, sy:e.clientY, ox:peStampState.x, oy:peStampState.y };
+      peStampGesture = null;
+    } else if(peStampPointers.size===2){
+      peStampDrag = null;
+      const pts = Array.from(peStampPointers.values());
+      peStampGesture = {
+        dist: ptDistance(pts[0], pts[1]), angle: ptAngle(pts[0], pts[1]),
+        scale: peStampState.scale, rotation: peStampState.rotation
+      };
+    }
   });
   el.addEventListener('pointermove', e=>{
-    if(!dragging) return;
-    const layerRect = document.getElementById('peStampLayer').getBoundingClientRect();
-    let newLeft = elStartLeft + (e.clientX-startX);
-    let newTop = elStartTop + (e.clientY-startY);
-    newLeft = Math.max(0, Math.min(newLeft, layerRect.width - el.offsetWidth));
-    newTop = Math.max(0, Math.min(newTop, layerRect.height - el.offsetHeight));
-    el.style.left = newLeft+'px'; el.style.top = newTop+'px';
+    if(!peStampPointers.has(e.pointerId)) return;
+    peStampPointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    if(peStampPointers.size>=2 && peStampGesture){
+      const pts = Array.from(peStampPointers.values()).slice(0,2);
+      const newDist = ptDistance(pts[0], pts[1]);
+      const newAngle = ptAngle(pts[0], pts[1]);
+      peStampState.scale = Math.max(0.4, Math.min(4, peStampGesture.scale * (newDist/peStampGesture.dist)));
+      peStampState.rotation = peStampGesture.rotation + (newAngle - peStampGesture.angle);
+      applyStampTransform(el);
+    } else if(peStampPointers.size===1 && peStampDrag && peStampDrag.id===e.pointerId){
+      peStampState.x = peStampDrag.ox + (e.clientX-peStampDrag.sx);
+      peStampState.y = peStampDrag.oy + (e.clientY-peStampDrag.sy);
+      applyStampTransform(el);
+    }
   });
-  el.addEventListener('pointerup', ()=>{ dragging=false; });
-  el.addEventListener('pointercancel', ()=>{ dragging=false; });
+  function releasePointer(e){
+    peStampPointers.delete(e.pointerId);
+    if(peStampPointers.size===1){
+      const [id, p] = Array.from(peStampPointers.entries())[0];
+      peStampDrag = { id, sx:p.x, sy:p.y, ox:peStampState.x, oy:peStampState.y };
+      peStampGesture = null;
+    } else if(peStampPointers.size===0){
+      peStampDrag = null; peStampGesture = null;
+    }
+  }
+  el.addEventListener('pointerup', releasePointer);
+  el.addEventListener('pointercancel', releasePointer);
 }
 function bakeStampOnto(ctx, targetWidth){
   const el = document.getElementById('peStampEl');
   if(!el) return;
   const layerRect = document.getElementById('peStampLayer').getBoundingClientRect();
-  const elRect = el.getBoundingClientRect();
-  const scale = targetWidth / layerRect.width;
+  const scaleToCanvas = targetWidth / layerRect.width;
   const cs = getComputedStyle(el);
-  const x = (elRect.left - layerRect.left) * scale;
-  const y = (elRect.top - layerRect.top) * scale;
-  const w = elRect.width * scale, h = elRect.height * scale;
-  const fontSize = parseFloat(cs.fontSize) * scale;
-  const padLeft = parseFloat(cs.paddingLeft) * scale, padTop = parseFloat(cs.paddingTop) * scale;
+  const text = el.querySelector('.pe-stamp-text').textContent;
+  const totalScale = scaleToCanvas * peStampState.scale;
+  const w = el.offsetWidth * totalScale, h = el.offsetHeight * totalScale;
+  const fontSize = parseFloat(cs.fontSize) * totalScale;
+  const padLeft = parseFloat(cs.paddingLeft) * totalScale, padTop = parseFloat(cs.paddingTop) * totalScale;
+  const cx = peStampState.x * scaleToCanvas, cy = peStampState.y * scaleToCanvas;
 
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(peStampState.rotation * Math.PI/180);
+  const x = -w/2, y = -h/2;
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   if(peStampStyle==='pill'){
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     peRoundRect(ctx, x, y, w, h, h/2); ctx.fill();
     ctx.font = `600 ${fontSize}px 'Inter', sans-serif`;
     ctx.fillStyle = '#fff'; ctx.shadowColor='transparent'; ctx.shadowBlur=0;
-    ctx.fillText(el.textContent, x+padLeft, y+padTop);
+    ctx.fillText(text, x+padLeft, y+padTop);
   } else if(peStampStyle==='bold'){
     ctx.font = `800 ${fontSize}px 'Inter', sans-serif`;
-    ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 6*scale;
-    ctx.fillText(el.textContent.toUpperCase(), x+padLeft, y+padTop);
+    ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 6*scaleToCanvas;
+    ctx.fillText(text.toUpperCase(), x+padLeft, y+padTop);
   } else if(peStampStyle==='script'){
     ctx.font = `italic 500 ${fontSize}px 'Fraunces', serif`;
-    ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 6*scale;
-    ctx.fillText(el.textContent, x+padLeft, y+padTop);
+    ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 6*scaleToCanvas;
+    ctx.fillText(text, x+padLeft, y+padTop);
   } else if(peStampStyle==='stamp'){
     ctx.font = `600 ${fontSize}px 'Courier New', monospace`;
     ctx.fillStyle = '#F5A623'; ctx.shadowColor='transparent'; ctx.shadowBlur=0;
-    ctx.fillText(el.textContent, x+padLeft, y+padTop);
+    ctx.fillText(text, x+padLeft, y+padTop);
   } else {
     ctx.font = `italic 600 ${fontSize}px 'Fraunces', serif`;
-    ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.shadowColor = 'rgba(0,0,0,0.55)'; ctx.shadowBlur = 5*scale;
-    ctx.fillText(el.textContent, x+padLeft, y+padTop);
+    ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.shadowColor = 'rgba(0,0,0,0.55)'; ctx.shadowBlur = 5*scaleToCanvas;
+    ctx.fillText(text, x+padLeft, y+padTop);
   }
+  ctx.restore();
 }
 function savePhotoEditor(){
   const out = document.createElement('canvas');
