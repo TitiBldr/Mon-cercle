@@ -157,7 +157,8 @@
   .camera-close{color:#fff; font-size:22px; cursor:pointer; padding:6px;}
   .camera-bottombar{position:absolute; bottom:0; left:0; right:0; padding:26px 24px; display:flex; align-items:center; justify-content:space-between; z-index:2;}
   .camera-gallery-btn{width:44px; height:44px; border-radius:8px; background:rgba(255,255,255,0.18); display:flex; align-items:center; justify-content:center; font-size:20px; cursor:pointer;}
-  .camera-shutter{width:66px; height:66px; border-radius:50%; background:#fff; border:4px solid rgba(255,255,255,0.4); cursor:pointer;}
+  .camera-shutter{width:66px; height:66px; border-radius:50%; background:#fff; border:4px solid rgba(255,255,255,0.4); cursor:pointer; touch-action:none; transition:background 0.15s, border-radius 0.15s;}
+  .camera-shutter.recording{background:#B0413E; border-color:#B0413E; border-radius:16px;}
   .camera-preview{position:absolute; inset:0; background:var(--bg); display:none; flex-direction:column; padding:20px;}
   .camera-preview.open{display:flex;}
   .camera-preview-media{width:100%; border-radius:8px; overflow:hidden; margin-bottom:10px; background:#000;}
@@ -198,6 +199,13 @@
   .action-sheet-btn{text-align:center; padding:13px; font-weight:600; font-size:15px; border-radius:10px; cursor:pointer; color:var(--week);}
   .action-sheet-btn.cancel{color:var(--ink-soft); margin-top:6px;}
   .action-sheet-btn:active{background:var(--bg);}
+  .action-sheet-icons{display:flex; gap:10px; margin-bottom:6px;}
+  .action-sheet-icon{
+    flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; padding:16px 8px;
+    border-radius:12px; cursor:pointer; font-size:12.5px; font-weight:600; color:var(--ink);
+  }
+  .action-sheet-icon span{font-size:26px;}
+  .action-sheet-icon:active{background:var(--bg);}
 
   /* ---- Éditeur galerie : ajouter / supprimer / réordonner ---- */
   .editor-row{display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); touch-action:none;}
@@ -211,6 +219,19 @@
   .editor-caption.placeholder{color:var(--ink-soft); font-style:italic; font-family:'Fraunces',serif;}
   .caption-panel-media{width:100%; border-radius:10px; overflow:hidden; margin-bottom:12px; background:#000;}
   .caption-panel-media img, .caption-panel-media video{width:100%; max-height:50vh; object-fit:contain; display:block;}
+
+  /* ---- Éditeur de photo ---- */
+  .pe-canvas-wrap{position:relative; width:100%; background:#111; display:flex; align-items:center; justify-content:center; min-height:280px; max-height:52vh; overflow:hidden;}
+  .pe-canvas-wrap canvas{max-width:100%; max-height:52vh; object-fit:contain;}
+  #peDrawCanvas{position:absolute; top:0; left:0; right:0; bottom:0; margin:auto; pointer-events:none; touch-action:none;}
+  #peDrawCanvas.active{pointer-events:auto;}
+  .pe-tabs{display:flex; border-bottom:1px solid var(--line); margin-top:10px;}
+  .pe-tab{flex:1; text-align:center; padding:10px 4px; font-size:12px; font-weight:600; color:var(--ink-soft); cursor:pointer; border-bottom:2px solid transparent;}
+  .pe-tab.active{color:var(--ink); border-bottom-color:var(--week);}
+  .pe-panel{padding:14px 16px 0;}
+  .pe-row{display:flex; gap:8px; flex-wrap:wrap;}
+  .pe-btn{padding:9px 14px; border-radius:10px; background:var(--paper); border:1px solid var(--line); font-size:12.5px; font-weight:600; color:var(--ink); cursor:pointer;}
+  .pe-color{width:30px; height:30px; border-radius:50%; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.2);}
 </style>
 </head>
 <body>
@@ -348,12 +369,13 @@ async function renderApp(){
         <div class="camera-topbar"><div class="camera-close" onclick="closeCamera()">✕</div></div>
         <div class="camera-bottombar">
           <div class="camera-gallery-btn" onclick="document.getElementById('cameraGalleryInput').click()">🖼️</div>
-          <div class="camera-shutter" onclick="captureCameraPhoto()"></div>
+          <div class="camera-shutter" onpointerdown="shutterDown()" onpointerup="shutterUp()" onpointerleave="clearTimeout(shutterTimer)"></div>
           <div style="width:44px;"></div>
         </div>
         <input type="file" id="cameraGalleryInput" accept="image/*,video/*" style="display:none" onchange="handleCameraFile(this.files[0])">
         <div class="camera-preview" id="cameraPreview">
           <div class="camera-preview-media" id="cameraPreviewMedia"></div>
+          <button class="ghost-btn" id="cameraEditBtn" onclick="openPhotoEditor('camera')" style="margin-bottom:10px;">🎨 Modifier la photo</button>
           <textarea id="cameraCaption" rows="2" placeholder="Un mot sur ce moment (optionnel)"></textarea>
           <div class="camera-preview-actions">
             <button class="ghost-btn" onclick="retakeCamera()">Reprendre</button>
@@ -363,11 +385,14 @@ async function renderApp(){
         </div>
       </div>
 
-      <!-- Menu d'action (appui long sur une tuile) -->
+      <!-- Menu de choix (clic sur une tuile) -->
       <div class="action-sheet-backdrop" id="actionSheet" onclick="if(event.target===this)closeActionSheet()">
         <div class="action-sheet">
           <div class="action-sheet-label" id="actionSheetTitle"></div>
-          <div class="action-sheet-btn" onclick="actionSheetModify()">Modifier</div>
+          <div class="action-sheet-icons">
+            <div class="action-sheet-icon" onclick="actionSheetView()"><span>👁️</span>Visionner</div>
+            <div class="action-sheet-icon" onclick="actionSheetModify()"><span>✏️</span>Modifier</div>
+          </div>
           <div class="action-sheet-btn cancel" onclick="closeActionSheet()">Annuler</div>
         </div>
       </div>
@@ -407,8 +432,62 @@ async function renderApp(){
         </div>
         <div class="modal-body">
           <div class="caption-panel-media" id="captionPanelMedia"></div>
+          <button class="ghost-btn" id="editPhotoBtn" onclick="openPhotoEditor('caption')" style="margin-bottom:10px; display:none;">🎨 Modifier la photo</button>
           <textarea id="captionPanelInput" rows="3" placeholder="Un mot sur ce moment (optionnel)"></textarea>
           <button id="captionPanelBtn" onclick="confirmCaptionPanel()">Ajouter</button>
+        </div>
+      </div>
+
+      <!-- Éditeur de photo (effets, recadrage, dessin, lieu/heure) -->
+      <div class="modal-overlay" id="photoEditorModal">
+        <div class="modal-head">
+          <div class="modal-back" onclick="cancelPhotoEditor()">‹</div>
+          <div class="modal-title">Modifier la photo</div>
+          <button style="width:auto; margin-left:auto; padding:8px 16px;" onclick="savePhotoEditor()">Terminer</button>
+        </div>
+        <div class="modal-body" style="padding:0 0 16px;">
+          <div class="pe-canvas-wrap">
+            <canvas id="peCanvas"></canvas>
+            <canvas id="peDrawCanvas"></canvas>
+          </div>
+          <div class="pe-tabs">
+            <div class="pe-tab active" data-tab="filters" onclick="peSwitchTab('filters')">Effets</div>
+            <div class="pe-tab" data-tab="crop" onclick="peSwitchTab('crop')">Recadrer</div>
+            <div class="pe-tab" data-tab="draw" onclick="peSwitchTab('draw')">Dessiner</div>
+            <div class="pe-tab" data-tab="info" onclick="peSwitchTab('info')">Lieu / heure</div>
+          </div>
+          <div class="pe-panel" id="pePanelFilters">
+            <div class="pe-row">
+              <div class="pe-btn" onclick="peApplyFilter('none')">Normal</div>
+              <div class="pe-btn" onclick="peApplyFilter('grayscale')">N&B</div>
+              <div class="pe-btn" onclick="peApplyFilter('sepia')">Sépia</div>
+              <div class="pe-btn" onclick="peApplyFilter('vivid')">Vif</div>
+              <div class="pe-btn" onclick="peApplyFilter('contrast')">Contraste</div>
+            </div>
+          </div>
+          <div class="pe-panel" id="pePanelCrop" style="display:none;">
+            <div class="pe-row">
+              <div class="pe-btn" onclick="peCrop('original')">Original</div>
+              <div class="pe-btn" onclick="peCrop('square')">Carré</div>
+              <div class="pe-btn" onclick="peCrop('portrait')">Portrait</div>
+              <div class="pe-btn" onclick="peRotate()">⟳ Pivoter</div>
+            </div>
+          </div>
+          <div class="pe-panel" id="pePanelDraw" style="display:none;">
+            <div class="pe-row">
+              <div class="pe-color" style="background:#26302B" onclick="peSetColor('#26302B')"></div>
+              <div class="pe-color" style="background:#B0413E" onclick="peSetColor('#B0413E')"></div>
+              <div class="pe-color" style="background:#45624F" onclick="peSetColor('#45624F')"></div>
+              <div class="pe-color" style="background:#C98A3E" onclick="peSetColor('#C98A3E')"></div>
+              <div class="pe-color" style="background:#fff; border:1px solid #ccc;" onclick="peSetColor('#ffffff')"></div>
+              <div class="pe-btn" onclick="peClearDrawing()">Effacer</div>
+            </div>
+          </div>
+          <div class="pe-panel" id="pePanelInfo" style="display:none;">
+            <input id="peLocationInput" placeholder="Lieu (optionnel)">
+            <input id="peTimeInput" placeholder="Heure ou date (optionnel)">
+            <button onclick="peApplyInfoStamp()">Appliquer sur la photo</button>
+          </div>
         </div>
       </div>
 
@@ -557,7 +636,7 @@ function tileHTML(year, m){
   const cover = arr[0];
   const rot = [-2,1.5,-1,2,-1.5,1][m%6];
   const countBadge = arr.length>1 ? `<div class="mini-count">${arr.length}</div>` : '';
-  const handlers = `onpointerdown="tileDown(${year},${m})" onpointerup="tileUp(${year},${m})" onpointerleave="tileCancel()" onpointercancel="tileCancel()"`;
+  const handlers = `onclick="tileClick(${year},${m})"`;
   if(cover){
     const media = cover.media_type==='video'
       ? `<video class="mini-photo" src="${cover.media_url}"></video>`
@@ -667,28 +746,21 @@ function attachAlbumSwipe(state){
   }, {passive:true});
 }
 
-/* ---------- Appui court (story) / appui long (menu Modifier) sur une tuile ---------- */
-let tileTimer = null, tileTriggered = false, tileTarget = null;
-function tileDown(year, month){
-  tileTriggered = false;
+/* ---------- Clic sur une tuile : choix visionner / modifier ---------- */
+let tileTarget = null;
+function tileClick(year, month){
+  const arr = albumState.byYM[year+'-'+month] || [];
+  if(arr.length===0){ openMonthEditor(year, month); return; }
   tileTarget = { year, month };
-  tileTimer = setTimeout(()=>{ tileTriggered = true; openActionSheet(year, month); }, 480);
-}
-function tileUp(year, month){
-  clearTimeout(tileTimer);
-  if(!tileTriggered){
-    const arr = albumState.byYM[year+'-'+month] || [];
-    if(arr.length){ openMonthStory(year, month); }
-    else { openMonthEditor(year, month); }
-  }
-}
-function tileCancel(){ clearTimeout(tileTimer); }
-
-function openActionSheet(year, month){
   document.getElementById('actionSheetTitle').textContent = monthsFR[month] + ' ' + year;
   document.getElementById('actionSheet').classList.add('open');
 }
 function closeActionSheet(){ document.getElementById('actionSheet').classList.remove('open'); }
+function actionSheetView(){
+  const { year, month } = tileTarget;
+  closeActionSheet();
+  openMonthStory(year, month);
+}
 function actionSheetModify(){
   const { year, month } = tileTarget;
   closeActionSheet();
@@ -739,7 +811,7 @@ function renderMonthStory(){
     v.onended = ()=>monthStoryNext();
   } else {
     mediaBox.innerHTML = `<img src="${p.media_url}">${tapsHTML}${captionHTML}`;
-    if(!s.captionExpanded){ s.timer = setTimeout(()=>monthStoryNext(), 3000); }
+    if(!s.captionExpanded){ s.timer = setTimeout(()=>monthStoryNext(), 6000); }
   }
 }
 function toggleMonthStoryCaption(){
@@ -822,11 +894,13 @@ function showNextQueuedFile(){
   captionPanelMode = 'add';
   captionPanelFile = file;
   const url = URL.createObjectURL(file);
-  document.getElementById('captionPanelMedia').innerHTML = file.type.startsWith('video')
+  const isVideo = file.type.startsWith('video');
+  document.getElementById('captionPanelMedia').innerHTML = isVideo
     ? `<video src="${url}" controls></video>` : `<img src="${url}">`;
   document.getElementById('captionPanelInput').value = '';
   document.getElementById('captionPanelBtn').textContent = captionQueue.length>1
     ? `Ajouter (reste ${captionQueue.length})` : 'Ajouter';
+  document.getElementById('editPhotoBtn').style.display = isVideo ? 'none' : 'block';
   document.getElementById('captionPanel').classList.add('open');
 }
 function openEditCaption(i){
@@ -837,6 +911,7 @@ function openEditCaption(i){
     ? `<video src="${p.media_url}" controls></video>` : `<img src="${p.media_url}">`;
   document.getElementById('captionPanelInput').value = p.caption || '';
   document.getElementById('captionPanelBtn').textContent = 'Enregistrer';
+  document.getElementById('editPhotoBtn').style.display = 'none';
   document.getElementById('captionPanel').classList.add('open');
 }
 function closeCaptionPanel(){
@@ -921,13 +996,14 @@ async function onDragEnd(){
 /* ---------- Caméra / story en direct ---------- */
 let cameraStream = null;
 let capturedFile = null;
+let mediaRecorder = null, recordedChunks = [], isRecording = false, shutterTimer = null;
 
 async function openCamera(){
   document.getElementById('cameraModal').classList.add('open');
   document.getElementById('cameraPreview').classList.remove('open');
   document.getElementById('cameraVideo').style.display = 'block';
   try {
-    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: true });
     document.getElementById('cameraVideo').srcObject = cameraStream;
   } catch(err){
     // Pas d'accès caméra : on ouvre directement la galerie
@@ -943,6 +1019,35 @@ function closeCamera(){
   stopCameraStream();
   capturedFile = null;
   document.getElementById('cameraCaption').value = '';
+}
+function shutterDown(){
+  shutterTimer = setTimeout(()=>{ startRecording(); }, 450);
+}
+function shutterUp(){
+  clearTimeout(shutterTimer);
+  if(isRecording){ stopRecording(); } else { captureCameraPhoto(); }
+}
+function startRecording(){
+  if(!cameraStream) return;
+  isRecording = true;
+  recordedChunks = [];
+  document.querySelector('.camera-shutter').classList.add('recording');
+  try{
+    mediaRecorder = new MediaRecorder(cameraStream);
+  } catch(err){ isRecording = false; return; }
+  mediaRecorder.ondataavailable = e=>{ if(e.data.size>0) recordedChunks.push(e.data); };
+  mediaRecorder.onstop = ()=>{
+    const blob = new Blob(recordedChunks, { type:'video/webm' });
+    capturedFile = new File([blob], `story_${Date.now()}.webm`, { type:'video/webm' });
+    stopCameraStream();
+    showCameraPreview(capturedFile);
+  };
+  mediaRecorder.start();
+}
+function stopRecording(){
+  isRecording = false;
+  document.querySelector('.camera-shutter').classList.remove('recording');
+  if(mediaRecorder && mediaRecorder.state==='recording'){ mediaRecorder.stop(); }
 }
 function captureCameraPhoto(){
   const video = document.getElementById('cameraVideo');
@@ -964,9 +1069,11 @@ function handleCameraFile(file){
 function showCameraPreview(file){
   document.getElementById('cameraVideo').style.display = 'none';
   const url = URL.createObjectURL(file);
-  document.getElementById('cameraPreviewMedia').innerHTML = file.type.startsWith('video')
+  const isVideo = file.type.startsWith('video');
+  document.getElementById('cameraPreviewMedia').innerHTML = isVideo
     ? `<video src="${url}" controls></video>`
     : `<img src="${url}">`;
+  document.getElementById('cameraEditBtn').style.display = isVideo ? 'none' : 'block';
   document.getElementById('cameraPreview').classList.add('open');
 }
 function retakeCamera(){
@@ -983,6 +1090,130 @@ async function publishCameraCapture(){
   if(error){ msg.innerHTML = `<div class="msg error">${error}</div>`; return; }
   closeCamera();
   loadAlbum();
+}
+/* ---------- Éditeur de photo (effets, recadrage, dessin, lieu/heure) ---------- */
+let peCanvas, peDrawCanvas, peSourceImage, peState, peColor = '#26302B', peDrawing = false;
+
+function cssFilterFor(name){
+  return {
+    none: 'none',
+    grayscale: 'grayscale(1)',
+    sepia: 'sepia(0.8)',
+    vivid: 'saturate(1.6) contrast(1.05)',
+    contrast: 'contrast(1.3) brightness(0.95)'
+  }[name] || 'none';
+}
+let peTarget = 'caption';
+function openPhotoEditor(target){
+  peTarget = target || 'caption';
+  const file = peTarget==='camera' ? capturedFile : captionPanelFile;
+  if(!file) return;
+  peCanvas = document.getElementById('peCanvas');
+  peDrawCanvas = document.getElementById('peDrawCanvas');
+  peState = { filter:'none', crop:'original', rotation:0 };
+  peSourceImage = new Image();
+  peSourceImage.onload = ()=>{ peRedrawBase(); attachDrawEvents(); };
+  peSourceImage.src = URL.createObjectURL(file);
+  peSwitchTab('filters');
+  document.getElementById('photoEditorModal').classList.add('open');
+}
+function cancelPhotoEditor(){
+  document.getElementById('photoEditorModal').classList.remove('open');
+}
+function peSwitchTab(name){
+  document.querySelectorAll('.pe-tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
+  ['filters','crop','draw','info'].forEach(t=>{
+    document.getElementById('pePanel'+t.charAt(0).toUpperCase()+t.slice(1)).style.display = (t===name)?'block':'none';
+  });
+  if(peDrawCanvas) peDrawCanvas.classList.toggle('active', name==='draw');
+}
+function peRedrawBase(){
+  const iw = peSourceImage.naturalWidth, ih = peSourceImage.naturalHeight;
+  let sx=0, sy=0, sw=iw, sh=ih;
+  if(peState.crop==='square'){
+    const side = Math.min(iw,ih); sx=(iw-side)/2; sy=(ih-side)/2; sw=side; sh=side;
+  } else if(peState.crop==='portrait'){
+    const targetRatio = 4/5, curRatio = iw/ih;
+    if(curRatio > targetRatio){ sh=ih; sw=ih*targetRatio; sx=(iw-sw)/2; sy=0; }
+    else { sw=iw; sh=iw/targetRatio; sx=0; sy=(ih-sh)/2; }
+  }
+  let outW = sw, outH = sh;
+  if(peState.rotation===90 || peState.rotation===270){ outW=sh; outH=sw; }
+  peCanvas.width = outW; peCanvas.height = outH;
+  peDrawCanvas.width = outW; peDrawCanvas.height = outH;
+  const ctx = peCanvas.getContext('2d');
+  ctx.save();
+  ctx.filter = cssFilterFor(peState.filter);
+  ctx.translate(outW/2, outH/2);
+  ctx.rotate(peState.rotation * Math.PI/180);
+  ctx.drawImage(peSourceImage, sx, sy, sw, sh, -sw/2, -sh/2, sw, sh);
+  ctx.restore();
+  peDrawCanvas.getContext('2d').clearRect(0,0,outW,outH);
+}
+function peApplyFilter(name){ peState.filter=name; peRedrawBase(); }
+function peCrop(mode){ peState.crop=mode; peRedrawBase(); }
+function peRotate(){ peState.rotation=(peState.rotation+90)%360; peRedrawBase(); }
+function peSetColor(c){ peColor=c; }
+function peClearDrawing(){ peDrawCanvas.getContext('2d').clearRect(0,0,peDrawCanvas.width,peDrawCanvas.height); }
+function pePos(e){
+  const r = peDrawCanvas.getBoundingClientRect();
+  const scaleX = peDrawCanvas.width / r.width, scaleY = peDrawCanvas.height / r.height;
+  return { x:(e.clientX-r.left)*scaleX, y:(e.clientY-r.top)*scaleY };
+}
+function attachDrawEvents(){
+  if(peDrawCanvas.dataset.bound) return;
+  peDrawCanvas.dataset.bound = '1';
+  peDrawCanvas.addEventListener('pointerdown', e=>{
+    peDrawing = true;
+    const { x, y } = pePos(e);
+    const ctx = peDrawCanvas.getContext('2d');
+    ctx.strokeStyle = peColor; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(x,y);
+    try{ peDrawCanvas.setPointerCapture(e.pointerId); }catch(err){}
+  });
+  peDrawCanvas.addEventListener('pointermove', e=>{
+    if(!peDrawing) return;
+    const { x, y } = pePos(e);
+    const ctx = peDrawCanvas.getContext('2d');
+    ctx.lineTo(x,y); ctx.stroke();
+  });
+  peDrawCanvas.addEventListener('pointerup', ()=>{ peDrawing=false; });
+  peDrawCanvas.addEventListener('pointercancel', ()=>{ peDrawing=false; });
+}
+function peApplyInfoStamp(){
+  const loc = document.getElementById('peLocationInput').value.trim();
+  const time = document.getElementById('peTimeInput').value.trim();
+  const text = [loc, time].filter(Boolean).join(' · ');
+  if(!text) return;
+  const ctx = peDrawCanvas.getContext('2d');
+  const size = Math.max(14, Math.round(peDrawCanvas.width*0.045));
+  ctx.font = `italic 600 ${size}px 'Fraunces', serif`;
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.shadowColor = 'rgba(0,0,0,0.55)'; ctx.shadowBlur = 5;
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(text, size*0.6, peDrawCanvas.height - size*0.6);
+  document.getElementById('peLocationInput').value = '';
+  document.getElementById('peTimeInput').value = '';
+}
+function savePhotoEditor(){
+  const out = document.createElement('canvas');
+  out.width = peCanvas.width; out.height = peCanvas.height;
+  const ctx = out.getContext('2d');
+  ctx.drawImage(peCanvas, 0, 0);
+  ctx.drawImage(peDrawCanvas, 0, 0);
+  out.toBlob(blob=>{
+    if(peTarget==='camera'){
+      const edited = new File([blob], `story_${Date.now()}.jpg`, { type:'image/jpeg' });
+      capturedFile = edited;
+      document.getElementById('cameraPreviewMedia').innerHTML = `<img src="${URL.createObjectURL(blob)}">`;
+    } else {
+      const edited = new File([blob], (captionPanelFile.name||'photo')+'.jpg', { type:'image/jpeg' });
+      captionPanelFile = edited;
+      if(captionQueue.length>0) captionQueue[0] = edited;
+      document.getElementById('captionPanelMedia').innerHTML = `<img src="${URL.createObjectURL(blob)}">`;
+    }
+    cancelPhotoEditor();
+  }, 'image/jpeg', 0.92);
 }
 </script>
 </body>
