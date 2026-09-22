@@ -164,12 +164,6 @@
   .camera-gallery-btn{width:44px; height:44px; border-radius:8px; background:rgba(255,255,255,0.18); display:flex; align-items:center; justify-content:center; font-size:20px; cursor:pointer;}
   .camera-shutter{width:66px; height:66px; border-radius:50%; background:#fff; border:4px solid rgba(255,255,255,0.4); cursor:pointer; touch-action:none; transition:background 0.15s, border-radius 0.15s;}
   .camera-shutter.recording{background:#B0413E; border-color:#B0413E; border-radius:16px;}
-  .camera-preview{position:absolute; inset:0; background:var(--bg); display:none; flex-direction:column; padding:20px;}
-  .camera-preview.open{display:flex;}
-  .camera-preview-media{width:100%; border-radius:8px; overflow:hidden; margin-bottom:10px; background:#000;}
-  .camera-preview-media img, .camera-preview-media video{width:100%; max-height:55vh; object-fit:cover; display:block;}
-  .camera-preview-actions{display:flex; gap:10px; margin-top:6px;}
-  .camera-preview-actions button{flex:1;}
   .ghost-btn{background:transparent !important; border:1px solid var(--line); color:var(--ink-soft) !important;}
 
   /* ---- Story plein écran (mois) ---- */
@@ -257,8 +251,12 @@
   .pe-row{display:flex; gap:8px; flex-wrap:wrap;}
   .pe-btn{padding:9px 14px; border-radius:10px; background:var(--paper); border:1px solid var(--line); font-size:12.5px; font-weight:600; color:var(--ink); cursor:pointer;}
   .pe-color{width:30px; height:30px; border-radius:50%; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.2);}
-  .pe-style-btn{padding:8px 12px; border-radius:10px; background:var(--paper); border:1.5px solid var(--line); font-size:11.5px; font-weight:600; color:var(--ink-soft); cursor:pointer;}
-  .pe-style-btn.active{border-color:var(--week); color:var(--week);}
+  .pe-colorbar{position:absolute; left:10px; top:16px; bottom:16px; width:26px; display:none; z-index:5;}
+  .pe-canvas-wrap.show-colorbar .pe-colorbar{display:block;}
+  .pe-colorbar-track{position:absolute; inset:0; border-radius:13px; background:linear-gradient(180deg,#ff0000,#ffea00,#22ff00,#00e5ff,#0033ff,#c400ff,#ff0000); box-shadow:0 0 0 2px rgba(255,255,255,0.55);}
+  .pe-colorbar-handle{position:absolute; left:50%; top:0; width:26px; height:26px; margin-left:-13px; margin-top:-13px; border-radius:50%; background:#fff; border:3px solid #fff; box-shadow:0 1px 5px rgba(0,0,0,0.45); cursor:grab; touch-action:none;}
+  .pe-hint{font-size:11.5px; color:var(--ink-soft); font-style:italic; font-family:'Fraunces',serif; line-height:1.5; margin-top:4px;}
+  .pe-stamp.selected{outline:1.5px dashed rgba(255,255,255,0.85); outline-offset:4px;}
 </style>
 </head>
 <body>
@@ -404,16 +402,6 @@ async function renderApp(){
           <div style="width:44px;"></div>
         </div>
         <input type="file" id="cameraGalleryInput" accept="image/*,video/*" style="display:none" onchange="handleCameraFile(this.files[0])">
-        <div class="camera-preview" id="cameraPreview">
-          <div class="camera-preview-media" id="cameraPreviewMedia"></div>
-          <button class="ghost-btn" id="cameraEditBtn" onclick="openPhotoEditor('camera')" style="margin-bottom:10px;">🎨 Modifier la photo</button>
-          <textarea id="cameraCaption" rows="2" placeholder="Un mot sur ce moment (optionnel)"></textarea>
-          <div class="camera-preview-actions">
-            <button class="ghost-btn" onclick="retakeCamera()">Reprendre</button>
-            <button onclick="publishCameraCapture()">Publier</button>
-          </div>
-          <div id="cameraMsg"></div>
-        </div>
       </div>
 
       <!-- Menu de choix (clic sur une tuile) -->
@@ -462,75 +450,72 @@ async function renderApp(){
           <div class="modal-title">Un mot sur ce moment</div>
         </div>
         <div class="modal-body">
-          <div class="caption-panel-media" id="captionPanelMedia"></div>
-          <button class="ghost-btn" id="editPhotoBtn" onclick="openPhotoEditor('caption')" style="margin-bottom:10px; display:none;">🎨 Modifier la photo</button>
-          <textarea id="captionPanelInput" rows="3" placeholder="Un mot sur ce moment (optionnel)"></textarea>
-          <button id="captionPanelBtn" onclick="confirmCaptionPanel()">Ajouter</button>
-        </div>
-      </div>
-
-      <!-- Éditeur de photo (effets, recadrage, dessin, lieu/heure) -->
-      <div class="modal-overlay" id="photoEditorModal">
-        <div class="modal-head">
-          <div class="modal-back" onclick="cancelPhotoEditor()">‹</div>
-          <div class="modal-title">Modifier la photo</div>
-          <button style="width:auto; margin-left:auto; padding:8px 16px;" onclick="savePhotoEditor()">Terminer</button>
-        </div>
-        <div class="modal-body" style="padding:0 0 16px;">
-          <div class="pe-canvas-wrap" id="peCanvasWrap">
-            <canvas id="peCanvas"></canvas>
-            <canvas id="peDrawCanvas"></canvas>
-            <div class="pe-stamp-layer" id="peStampLayer"></div>
-            <div class="pe-toolbar">
-              <div class="pe-tool active" data-tab="filters" onclick="peSwitchTab('filters')">🎨</div>
-              <div class="pe-tool" data-tab="crop" onclick="peSwitchTab('crop')">✂️</div>
-              <div class="pe-tool" data-tab="draw" onclick="peSwitchTab('draw')">✏️</div>
-              <div class="pe-tool" data-tab="info" onclick="peSwitchTab('info')">📍</div>
+          <div id="peEditorBlock">
+            <div class="pe-canvas-wrap" id="peCanvasWrap">
+              <canvas id="peCanvas"></canvas>
+              <canvas id="peDrawCanvas"></canvas>
+              <div class="pe-stamp-layer" id="peStampLayer"></div>
+              <div class="pe-colorbar" id="peColorbar">
+                <div class="pe-colorbar-track"></div>
+                <div class="pe-colorbar-handle" id="peColorbarHandle"></div>
+              </div>
+              <div class="pe-toolbar">
+                <div class="pe-tool active" data-tab="filters" onclick="peSwitchTab('filters')">🎨</div>
+                <div class="pe-tool" data-tab="crop" onclick="peSwitchTab('crop')">✂️</div>
+                <div class="pe-tool" data-tab="draw" onclick="peSwitchTab('draw')">✏️</div>
+                <div class="pe-tool" data-tab="info" onclick="peSwitchTab('info')">📍</div>
+              </div>
+            </div>
+            <div class="pe-panel" id="pePanelFilters">
+              <div class="pe-row">
+                <div class="pe-btn" onclick="peApplyFilter('none')">Normal</div>
+                <div class="pe-btn" onclick="peApplyFilter('grayscale')">N&B</div>
+                <div class="pe-btn" onclick="peApplyFilter('sepia')">Sépia</div>
+                <div class="pe-btn" onclick="peApplyFilter('vivid')">Vif</div>
+                <div class="pe-btn" onclick="peApplyFilter('contrast')">Contraste</div>
+              </div>
+            </div>
+            <div class="pe-panel" id="pePanelCrop" style="display:none;">
+              <div class="pe-row">
+                <div class="pe-btn" onclick="peCrop('original')">Original</div>
+                <div class="pe-btn" onclick="peCrop('square')">Carré</div>
+                <div class="pe-btn" onclick="peCrop('portrait')">Portrait</div>
+                <div class="pe-btn" onclick="peRotate()">⟳ Pivoter</div>
+              </div>
+            </div>
+            <div class="pe-panel" id="pePanelDraw" style="display:none;">
+              <div class="pe-row">
+                <div class="pe-color" style="background:#26302B" onclick="peSetColor('#26302B')"></div>
+                <div class="pe-color" style="background:#B0413E" onclick="peSetColor('#B0413E')"></div>
+                <div class="pe-color" style="background:#45624F" onclick="peSetColor('#45624F')"></div>
+                <div class="pe-color" style="background:#C98A3E" onclick="peSetColor('#C98A3E')"></div>
+                <div class="pe-color" style="background:#fff; border:1px solid #ccc;" onclick="peSetColor('#ffffff')"></div>
+                <div class="pe-btn" onclick="peClearDrawing()">Effacer</div>
+              </div>
+            </div>
+            <div class="pe-panel" id="pePanelInfo" style="display:none;">
+              <div class="pe-row" style="margin-bottom:8px;">
+                <div class="pe-btn" onclick="peUseLocation()">📍 Ma position</div>
+                <div class="pe-btn" onclick="peUseNow()">🕐 Heure actuelle</div>
+              </div>
+              <div class="row" style="margin-bottom:6px;">
+                <input id="peLocationInput" placeholder="Lieu (optionnel)">
+                <button style="width:auto; padding:0 14px;" onclick="peAddLocationStamp()">+</button>
+              </div>
+              <div class="row" style="margin-bottom:6px;">
+                <input id="peTimeInput" placeholder="Heure ou date (optionnel)">
+                <button style="width:auto; padding:0 14px;" onclick="peAddTimeStamp()">+</button>
+              </div>
+              <div id="peLocationMsg" class="msg"></div>
+              <div class="pe-hint">Touchez un texte posé sur la photo pour changer son style. Glissez la barre arc-en-ciel à gauche de la photo pour changer sa couleur.</div>
             </div>
           </div>
-          <div class="pe-panel" id="pePanelFilters">
-            <div class="pe-row">
-              <div class="pe-btn" onclick="peApplyFilter('none')">Normal</div>
-              <div class="pe-btn" onclick="peApplyFilter('grayscale')">N&B</div>
-              <div class="pe-btn" onclick="peApplyFilter('sepia')">Sépia</div>
-              <div class="pe-btn" onclick="peApplyFilter('vivid')">Vif</div>
-              <div class="pe-btn" onclick="peApplyFilter('contrast')">Contraste</div>
-            </div>
+          <div id="staticMediaBlock" style="display:none;">
+            <div class="caption-panel-media" id="captionPanelMedia"></div>
           </div>
-          <div class="pe-panel" id="pePanelCrop" style="display:none;">
-            <div class="pe-row">
-              <div class="pe-btn" onclick="peCrop('original')">Original</div>
-              <div class="pe-btn" onclick="peCrop('square')">Carré</div>
-              <div class="pe-btn" onclick="peCrop('portrait')">Portrait</div>
-              <div class="pe-btn" onclick="peRotate()">⟳ Pivoter</div>
-            </div>
-          </div>
-          <div class="pe-panel" id="pePanelDraw" style="display:none;">
-            <div class="pe-row">
-              <div class="pe-color" style="background:#26302B" onclick="peSetColor('#26302B')"></div>
-              <div class="pe-color" style="background:#B0413E" onclick="peSetColor('#B0413E')"></div>
-              <div class="pe-color" style="background:#45624F" onclick="peSetColor('#45624F')"></div>
-              <div class="pe-color" style="background:#C98A3E" onclick="peSetColor('#C98A3E')"></div>
-              <div class="pe-color" style="background:#fff; border:1px solid #ccc;" onclick="peSetColor('#ffffff')"></div>
-              <div class="pe-btn" onclick="peClearDrawing()">Effacer</div>
-            </div>
-          </div>
-          <div class="pe-panel" id="pePanelInfo" style="display:none;">
-            <div class="pe-row" style="margin-bottom:10px;">
-              <div class="pe-btn" onclick="peUseLocation()">📍 Utiliser ma position</div>
-              <div class="pe-btn" onclick="peUseNow()">🕐 Heure actuelle</div>
-            </div>
-            <input id="peLocationInput" placeholder="Lieu (optionnel)">
-            <input id="peTimeInput" placeholder="Heure ou date (optionnel)">
-            <div id="peLocationMsg" class="msg"></div>
-            <div class="pe-row" style="margin:8px 0 12px;">
-              <div class="pe-style-btn active" data-style="minimal" onclick="peSetStampStyle('minimal')">Épuré</div>
-              <div class="pe-style-btn" data-style="pill" onclick="peSetStampStyle('pill')">Étiquette</div>
-              <div class="pe-style-btn" data-style="bold" onclick="peSetStampStyle('bold')">Gras</div>
-              <div class="pe-style-btn" data-style="script" onclick="peSetStampStyle('script')">Manuscrit</div>
-              <div class="pe-style-btn" data-style="stamp" onclick="peSetStampStyle('stamp')">Horodateur</div>
-            </div>
-            <button onclick="peApplyInfoStamp()">Appliquer sur la photo</button>
+          <div style="padding:14px 16px 0;">
+            <textarea id="captionPanelInput" rows="3" placeholder="Un mot sur ce moment (optionnel)"></textarea>
+            <button id="captionPanelBtn" onclick="confirmCaptionPanel()">Ajouter</button>
           </div>
         </div>
       </div>
@@ -1004,25 +989,45 @@ function showNextQueuedFile(){
   const file = captionQueue[0];
   captionPanelMode = 'add';
   captionPanelFile = file;
-  const url = URL.createObjectURL(file);
   const isVideo = file.type.startsWith('video');
-  document.getElementById('captionPanelMedia').innerHTML = isVideo
-    ? `<video src="${url}" controls></video>` : `<img src="${url}">`;
   document.getElementById('captionPanelInput').value = '';
   document.getElementById('captionPanelBtn').textContent = captionQueue.length>1
     ? `Ajouter (reste ${captionQueue.length})` : 'Ajouter';
-  document.getElementById('editPhotoBtn').style.display = isVideo ? 'none' : 'block';
+  if(isVideo){
+    showEditorBlock(false);
+    document.getElementById('captionPanelMedia').innerHTML = `<video src="${URL.createObjectURL(file)}" controls></video>`;
+  } else {
+    showEditorBlock(true);
+    initInlinePhotoEditor(file);
+  }
   document.getElementById('captionPanel').classList.add('open');
+}
+function showEditorBlock(show){
+  document.getElementById('peEditorBlock').style.display = show ? 'block' : 'none';
+  document.getElementById('staticMediaBlock').style.display = show ? 'none' : 'block';
+}
+function initInlinePhotoEditor(file){
+  peCanvas = document.getElementById('peCanvas');
+  peDrawCanvas = document.getElementById('peDrawCanvas');
+  peState = { filter:'none', crop:'original', rotation:0 };
+  peClearAllStamps();
+  document.getElementById('peLocationInput').value = '';
+  document.getElementById('peTimeInput').value = '';
+  document.getElementById('peLocationMsg').textContent = '';
+  peSourceImage = new Image();
+  peSourceImage.onload = ()=>{ peRedrawBase(); attachDrawEvents(); };
+  peSourceImage.src = URL.createObjectURL(file);
+  peSwitchTab('filters');
 }
 function openEditCaption(i){
   captionPanelMode = 'edit';
   captionPanelIndex = i;
   const p = editorItems[i];
+  showEditorBlock(false);
   document.getElementById('captionPanelMedia').innerHTML = p.media_type==='video'
     ? `<video src="${p.media_url}" controls></video>` : `<img src="${p.media_url}">`;
   document.getElementById('captionPanelInput').value = p.caption || '';
   document.getElementById('captionPanelBtn').textContent = 'Enregistrer';
-  document.getElementById('editPhotoBtn').style.display = 'none';
   document.getElementById('captionPanel').classList.add('open');
 }
 function closeCaptionPanel(){
@@ -1030,18 +1035,32 @@ function closeCaptionPanel(){
   document.getElementById('editorUploadInput').value = '';
   captionPanelMode = null; captionPanelFile = null; captionPanelIndex = null;
   captionQueue = []; editorQueueDone = 0;
+  peClearAllStamps();
+}
+function getEditedImageBlob(){
+  return new Promise(resolve=>{
+    const out = document.createElement('canvas');
+    out.width = peCanvas.width; out.height = peCanvas.height;
+    const ctx = out.getContext('2d');
+    ctx.drawImage(peCanvas, 0, 0);
+    ctx.drawImage(peDrawCanvas, 0, 0);
+    bakeAllStampsOnto(ctx, out.width);
+    out.toBlob(blob=>{
+      resolve(new File([blob], (captionPanelFile.name||'photo').replace(/\.\w+$/,'')+'.jpg', { type:'image/jpeg' }));
+    }, 'image/jpeg', 0.85);
+  });
 }
 async function confirmCaptionPanel(){
   const caption = document.getElementById('captionPanelInput').value.trim();
   const msg = document.getElementById('editorMsg');
   if(captionPanelMode === 'add'){
     msg.innerHTML = `<div class="msg">Envoi en cours…</div>`;
-    const postDateISO = editorTarget.kind==='week' ? todayISO()
-      : `${editorTarget.year}-${String(editorTarget.month+1).padStart(2,'0')}-15`;
-    const nextOrder = editorItems.reduce((mx,p)=>Math.max(mx, p.sort_order||0), 0) + 1;
-    const file = captionPanelFile;
-    const mediaType = file.type && file.type.startsWith('video') ? 'video' : 'photo';
-    const toUpload = mediaType==='photo' ? await compressImageFile(file) : file;
+    const postDateISO = !editorTarget ? todayISO()
+      : (editorTarget.kind==='week' ? todayISO() : `${editorTarget.year}-${String(editorTarget.month+1).padStart(2,'0')}-15`);
+    const nextOrder = editorTarget ? editorItems.reduce((mx,p)=>Math.max(mx, p.sort_order||0), 0) + 1 : 0;
+    const isVideo = captionPanelFile.type && captionPanelFile.type.startsWith('video');
+    const mediaType = isVideo ? 'video' : 'photo';
+    const toUpload = isVideo ? captionPanelFile : await getEditedImageBlob();
     const path = `${session.user.id}/${Date.now()}_${toUpload.name}`;
     const { error: upErr } = await sb.storage.from('photos').upload(path, toUpload);
     if(upErr){ msg.innerHTML = `<div class="msg error">${upErr.message}</div>`; return; }
@@ -1050,11 +1069,11 @@ async function confirmCaptionPanel(){
       author_id: session.user.id, media_url: pub.publicUrl, media_type: mediaType, caption, post_date: postDateISO, sort_order: nextOrder
     }).select().single();
     if(insErr){ msg.innerHTML = `<div class="msg error">${insErr.message}</div>`; return; }
-    editorItems.push(inserted);
+    if(editorTarget){ editorItems.push(inserted); }
     editorQueueDone++;
     captionQueue.shift();
     msg.innerHTML = `<div class="msg">Ajouté !</div>`;
-    if(captionQueue.length>0){ showNextQueuedFile(); renderEditorList(); return; }
+    if(captionQueue.length>0){ showNextQueuedFile(); return; }
   } else if(captionPanelMode === 'edit'){
     const item = editorItems[captionPanelIndex];
     msg.innerHTML = `<div class="msg">Enregistrement…</div>`;
@@ -1064,7 +1083,7 @@ async function confirmCaptionPanel(){
     msg.innerHTML = '';
   }
   closeCaptionPanel();
-  renderEditorList();
+  if(editorTarget){ renderEditorList(); } else { loadAlbum(); }
 }
 
 function startDrag(e, idx){
@@ -1107,13 +1126,11 @@ async function onDragEnd(){
 
 /* ---------- Caméra / story en direct ---------- */
 let cameraStream = null;
-let capturedFile = null;
 let mediaRecorder = null, recordedChunks = [], isRecording = false, shutterTimer = null;
 let currentFacingMode = 'environment';
 
 async function openCamera(){
   document.getElementById('cameraModal').classList.add('open');
-  document.getElementById('cameraPreview').classList.remove('open');
   document.getElementById('cameraVideo').style.display = 'block';
   document.getElementById('cameraError').style.display = 'none';
   currentFacingMode = 'environment';
@@ -1162,10 +1179,7 @@ function stopCameraStream(){
 }
 function closeCamera(){
   document.getElementById('cameraModal').classList.remove('open');
-  document.getElementById('cameraPreview').classList.remove('open');
   stopCameraStream();
-  capturedFile = null;
-  document.getElementById('cameraCaption').value = '';
 }
 function shutterDown(){
   shutterTimer = setTimeout(()=>{ startRecording(); }, 450);
@@ -1191,9 +1205,9 @@ function startRecording(){
   mediaRecorder.ondataavailable = e=>{ if(e.data.size>0) recordedChunks.push(e.data); };
   mediaRecorder.onstop = ()=>{
     const blob = new Blob(recordedChunks, { type:'video/webm' });
-    capturedFile = new File([blob], `story_${Date.now()}.webm`, { type:'video/webm' });
+    const file = new File([blob], `story_${Date.now()}.webm`, { type:'video/webm' });
     stopCameraStream();
-    showCameraPreview(capturedFile);
+    sendToCaptionFlow(file);
   };
   mediaRecorder.start();
 }
@@ -1211,41 +1225,22 @@ function captureCameraPhoto(){
   canvas.height = Math.round(video.videoHeight*scale);
   canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
   canvas.toBlob(blob => {
-    capturedFile = new File([blob], `story_${Date.now()}.jpg`, { type: 'image/jpeg' });
-    showCameraPreview(capturedFile);
+    const file = new File([blob], `story_${Date.now()}.jpg`, { type: 'image/jpeg' });
+    sendToCaptionFlow(file);
   }, 'image/jpeg', 0.85);
   stopCameraStream();
 }
 function handleCameraFile(file){
   if(!file) return;
-  capturedFile = file;
   stopCameraStream();
-  showCameraPreview(file);
+  sendToCaptionFlow(file);
 }
-function showCameraPreview(file){
-  document.getElementById('cameraVideo').style.display = 'none';
-  const url = URL.createObjectURL(file);
-  const isVideo = file.type.startsWith('video');
-  document.getElementById('cameraPreviewMedia').innerHTML = isVideo
-    ? `<video src="${url}" controls></video>`
-    : `<img src="${url}">`;
-  document.getElementById('cameraEditBtn').style.display = isVideo ? 'none' : 'block';
-  document.getElementById('cameraPreview').classList.add('open');
-}
-function retakeCamera(){
-  capturedFile = null;
-  document.getElementById('cameraPreview').classList.remove('open');
-  openCamera();
-}
-async function publishCameraCapture(){
-  const msg = document.getElementById('cameraMsg');
-  if(!capturedFile) return;
-  const caption = document.getElementById('cameraCaption').value.trim();
-  msg.innerHTML = `<div class="msg">Envoi en cours…</div>`;
-  const { error } = await publishMedia(capturedFile, caption, todayISO());
-  if(error){ msg.innerHTML = `<div class="msg error">${error}</div>`; return; }
-  closeCamera();
-  loadAlbum();
+function sendToCaptionFlow(file){
+  document.getElementById('cameraModal').classList.remove('open');
+  editorTarget = null;
+  captionQueue = [file];
+  editorQueueDone = 0;
+  showNextQueuedFile();
 }
 /* ---------- Éditeur de photo (effets, recadrage, dessin, lieu/heure) ---------- */
 let peCanvas, peDrawCanvas, peSourceImage, peState, peColor = '#26302B', peDrawing = false;
@@ -1259,34 +1254,13 @@ function cssFilterFor(name){
     contrast: 'contrast(1.3) brightness(0.95)'
   }[name] || 'none';
 }
-let peTarget = 'caption';
-function openPhotoEditor(target){
-  peTarget = target || 'caption';
-  const file = peTarget==='camera' ? capturedFile : captionPanelFile;
-  if(!file) return;
-  peCanvas = document.getElementById('peCanvas');
-  peDrawCanvas = document.getElementById('peDrawCanvas');
-  peState = { filter:'none', crop:'original', rotation:0 };
-  peSetStampStyle('minimal');
-  document.getElementById('peLocationInput').value = '';
-  document.getElementById('peTimeInput').value = '';
-  document.getElementById('peLocationMsg').textContent = '';
-  peClearStamp();
-  peSourceImage = new Image();
-  peSourceImage.onload = ()=>{ peRedrawBase(); attachDrawEvents(); };
-  peSourceImage.src = URL.createObjectURL(file);
-  peSwitchTab('filters');
-  document.getElementById('photoEditorModal').classList.add('open');
-}
-function cancelPhotoEditor(){
-  document.getElementById('photoEditorModal').classList.remove('open');
-}
 function peSwitchTab(name){
   document.querySelectorAll('.pe-tool').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
   ['filters','crop','draw','info'].forEach(t=>{
     document.getElementById('pePanel'+t.charAt(0).toUpperCase()+t.slice(1)).style.display = (t===name)?'block':'none';
   });
   if(peDrawCanvas) peDrawCanvas.classList.toggle('active', name==='draw');
+  updateColorbarVisibility();
 }
 function peRedrawBase(){
   const iw = peSourceImage.naturalWidth, ih = peSourceImage.naturalHeight;
@@ -1327,8 +1301,8 @@ function syncStampLayer(){
   layer.style.height = canvasRect.height + 'px';
 }
 function peApplyFilter(name){ peState.filter=name; peRedrawBase(); }
-function peCrop(mode){ peState.crop=mode; peClearStamp(); peRedrawBase(); }
-function peRotate(){ peState.rotation=(peState.rotation+90)%360; peClearStamp(); peRedrawBase(); }
+function peCrop(mode){ peState.crop=mode; peClearAllStamps(); peRedrawBase(); }
+function peRotate(){ peState.rotation=(peState.rotation+90)%360; peClearAllStamps(); peRedrawBase(); }
 function peSetColor(c){ peColor=c; }
 function peClearDrawing(){ peDrawCanvas.getContext('2d').clearRect(0,0,peDrawCanvas.width,peDrawCanvas.height); }
 function pePos(e){
@@ -1356,14 +1330,23 @@ function attachDrawEvents(){
   peDrawCanvas.addEventListener('pointerup', ()=>{ peDrawing=false; });
   peDrawCanvas.addEventListener('pointercancel', ()=>{ peDrawing=false; });
 }
-let peStampStyle = 'minimal';
-function peSetStampStyle(s){
-  peStampStyle = s;
-  document.querySelectorAll('.pe-style-btn').forEach(b=>b.classList.toggle('active', b.dataset.style===s));
-}
 function peUseNow(){
   const now = new Date();
-  document.getElementById('peTimeInput').value = now.toLocaleString('fr-FR', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+  const text = now.toLocaleString('fr-FR', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+  document.getElementById('peTimeInput').value = text;
+  upsertStamp('time', text);
+}
+function peAddTimeStamp(){
+  const text = document.getElementById('peTimeInput').value.trim();
+  if(!text) return;
+  upsertStamp('time', text);
+  document.getElementById('peTimeInput').value = '';
+}
+function peAddLocationStamp(){
+  const text = document.getElementById('peLocationInput').value.trim();
+  if(!text) return;
+  upsertStamp('location', text);
+  document.getElementById('peLocationInput').value = '';
 }
 function peUseLocation(){
   const msg = document.getElementById('peLocationMsg');
@@ -1377,11 +1360,14 @@ function peUseLocation(){
       const a = data.address || {};
       const place = a.city || a.town || a.village || a.municipality || a.county || '';
       const country = a.country || '';
-      document.getElementById('peLocationInput').value = [place, country].filter(Boolean).join(', ') || 'Position trouvée';
+      const text = [place, country].filter(Boolean).join(', ') || 'Position trouvée';
+      document.getElementById('peLocationInput').value = '';
       msg.textContent = '';
+      upsertStamp('location', text);
     } catch(err){
-      document.getElementById('peLocationInput').value = `${latitude.toFixed(3)}, ${longitude.toFixed(3)}`;
+      const text = `${latitude.toFixed(3)}, ${longitude.toFixed(3)}`;
       msg.textContent = 'Lieu approximatif (nom indisponible).';
+      upsertStamp('location', text);
     }
   }, (err)=>{
     msg.textContent = 'Localisation refusée ou indisponible.';
@@ -1396,156 +1382,209 @@ function peRoundRect(ctx,x,y,w,h,r){
   ctx.arcTo(x,y,x+w,y,r);
   ctx.closePath();
 }
-let peStampState = { x:0, y:0, scale:1, rotation:0 };
-let peStampPointers = new Map();
-let peStampDrag = null, peStampGesture = null;
 
-function peApplyInfoStamp(){
-  const loc = document.getElementById('peLocationInput').value.trim();
-  const time = document.getElementById('peTimeInput').value.trim();
-  const text = [loc, time].filter(Boolean).join(' · ');
-  if(!text) return;
-  let el = document.getElementById('peStampEl');
+/* ---- Autocollants (lieu / heure) : plusieurs indépendants, glisser/pincer/tourner/supprimer ---- */
+let peStamps = new Map(); // id -> {kind, text, style, color, x, y, scale, rotation}
+let peStampSeq = 0;
+let peSelectedStampId = null;
+const PE_STYLE_ORDER = ['minimal','pill','bold','script','stamp'];
+
+function upsertStamp(kind, text){
+  let id = null;
+  for(const [sid,s] of peStamps){ if(s.kind===kind){ id=sid; break; } }
+  if(id){
+    peStamps.get(id).text = text;
+  } else {
+    id = 'peStamp'+(peStampSeq++);
+    const layerRect = document.getElementById('peStampLayer').getBoundingClientRect();
+    const defaultY = kind==='location' ? layerRect.height*0.70 : layerRect.height*0.86;
+    peStamps.set(id, { kind, text, style:'minimal', color:null, x: layerRect.width*0.5, y: defaultY, scale:1, rotation:0 });
+  }
+  renderStampEl(id);
+  selectStamp(id);
+}
+function renderStampEl(id){
+  const s = peStamps.get(id);
+  let el = document.getElementById(id);
   if(!el){
     el = document.createElement('div');
-    el.id = 'peStampEl';
-    el.innerHTML = `<span class="pe-stamp-text"></span><span class="pe-stamp-delete" onpointerdown="event.stopPropagation()" onclick="peClearStamp()">✕</span>`;
+    el.id = id;
+    el.innerHTML = `<span class="pe-stamp-text"></span><span class="pe-stamp-delete" onpointerdown="event.stopPropagation()" onclick="removeStamp('${id}')">✕</span>`;
     document.getElementById('peStampLayer').appendChild(el);
-    const layerRect = document.getElementById('peStampLayer').getBoundingClientRect();
-    peStampState = { x: layerRect.width*0.5, y: layerRect.height*0.82, scale:1, rotation:0 };
-    attachStampGestures(el);
+    attachStampGestures(el, id);
   }
-  el.className = 'pe-stamp style-' + peStampStyle;
-  el.querySelector('.pe-stamp-text').textContent = text;
-  applyStampTransform(el);
-  document.getElementById('peLocationInput').value = '';
-  document.getElementById('peTimeInput').value = '';
-  document.getElementById('peLocationMsg').textContent = '';
+  el.className = 'pe-stamp style-' + s.style + (peSelectedStampId===id ? ' selected' : '');
+  const textSpan = el.querySelector('.pe-stamp-text');
+  textSpan.textContent = s.text;
+  textSpan.style.color = s.color || '';
+  applyStampTransform(id);
 }
-function applyStampTransform(el){
-  el = el || document.getElementById('peStampEl');
-  if(!el) return;
-  el.style.left = peStampState.x+'px';
-  el.style.top = peStampState.y+'px';
-  el.style.transform = `translate(-50%,-50%) rotate(${peStampState.rotation}deg) scale(${peStampState.scale})`;
+function applyStampTransform(id){
+  const s = peStamps.get(id); const el = document.getElementById(id);
+  if(!s || !el) return;
+  el.style.left = s.x+'px'; el.style.top = s.y+'px';
+  el.style.transform = `translate(-50%,-50%) rotate(${s.rotation}deg) scale(${s.scale})`;
 }
-function peClearStamp(){
-  const el = document.getElementById('peStampEl');
-  if(el) el.remove();
-  peStampPointers.clear(); peStampDrag=null; peStampGesture=null;
+function removeStamp(id){
+  peStamps.delete(id);
+  const el = document.getElementById(id); if(el) el.remove();
+  if(peSelectedStampId===id) peSelectedStampId=null;
+  updateColorbarVisibility();
+}
+function peClearAllStamps(){
+  peStamps.forEach((s,id)=>{ const el=document.getElementById(id); if(el) el.remove(); });
+  peStamps.clear();
+  peSelectedStampId = null;
+  updateColorbarVisibility();
+}
+function selectStamp(id){
+  peSelectedStampId = id;
+  document.querySelectorAll('.pe-stamp').forEach(e=>e.classList.remove('selected'));
+  const el = document.getElementById(id); if(el) el.classList.add('selected');
+  updateColorbarVisibility();
+}
+function updateColorbarVisibility(){
+  const wrap = document.getElementById('peCanvasWrap');
+  const onInfoTab = document.getElementById('pePanelInfo').style.display !== 'none';
+  wrap.classList.toggle('show-colorbar', !!peSelectedStampId && onInfoTab);
+}
+function cycleStampStyle(id){
+  const s = peStamps.get(id); if(!s) return;
+  const idx = PE_STYLE_ORDER.indexOf(s.style);
+  s.style = PE_STYLE_ORDER[(idx+1)%PE_STYLE_ORDER.length];
+  renderStampEl(id);
+}
+function setStampColor(id, color){
+  const s = peStamps.get(id); if(!s) return;
+  s.color = color;
+  const el = document.getElementById(id);
+  if(el) el.querySelector('.pe-stamp-text').style.color = color;
 }
 function ptDistance(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
 function ptAngle(a,b){ return Math.atan2(b.y-a.y, b.x-a.x) * 180/Math.PI; }
-function attachStampGestures(el){
+function attachStampGestures(el, id){
+  const pointers = new Map();
+  let drag = null, gesture = null, downPos = null, moved = false;
   el.addEventListener('pointerdown', e=>{
     if(e.target.classList.contains('pe-stamp-delete')) return;
+    selectStamp(id);
     try{ el.setPointerCapture(e.pointerId); }catch(err){}
-    peStampPointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
-    if(peStampPointers.size===1){
-      peStampDrag = { id:e.pointerId, sx:e.clientX, sy:e.clientY, ox:peStampState.x, oy:peStampState.y };
-      peStampGesture = null;
-    } else if(peStampPointers.size===2){
-      peStampDrag = null;
-      const pts = Array.from(peStampPointers.values());
-      peStampGesture = {
-        dist: ptDistance(pts[0], pts[1]), angle: ptAngle(pts[0], pts[1]),
-        scale: peStampState.scale, rotation: peStampState.rotation
-      };
+    pointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    const s = peStamps.get(id);
+    if(pointers.size===1){
+      downPos = { x:e.clientX, y:e.clientY }; moved = false;
+      drag = { id:e.pointerId, sx:e.clientX, sy:e.clientY, ox:s.x, oy:s.y };
+      gesture = null;
+    } else if(pointers.size===2){
+      drag = null;
+      const pts = Array.from(pointers.values());
+      gesture = { dist: ptDistance(pts[0],pts[1]), angle: ptAngle(pts[0],pts[1]), scale:s.scale, rotation:s.rotation };
     }
   });
   el.addEventListener('pointermove', e=>{
-    if(!peStampPointers.has(e.pointerId)) return;
-    peStampPointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
-    if(peStampPointers.size>=2 && peStampGesture){
-      const pts = Array.from(peStampPointers.values()).slice(0,2);
-      const newDist = ptDistance(pts[0], pts[1]);
-      const newAngle = ptAngle(pts[0], pts[1]);
-      peStampState.scale = Math.max(0.4, Math.min(4, peStampGesture.scale * (newDist/peStampGesture.dist)));
-      peStampState.rotation = peStampGesture.rotation + (newAngle - peStampGesture.angle);
-      applyStampTransform(el);
-    } else if(peStampPointers.size===1 && peStampDrag && peStampDrag.id===e.pointerId){
-      peStampState.x = peStampDrag.ox + (e.clientX-peStampDrag.sx);
-      peStampState.y = peStampDrag.oy + (e.clientY-peStampDrag.sy);
-      applyStampTransform(el);
+    if(!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    const s = peStamps.get(id); if(!s) return;
+    if(pointers.size>=2 && gesture){
+      const pts = Array.from(pointers.values()).slice(0,2);
+      const newDist = ptDistance(pts[0],pts[1]), newAngle = ptAngle(pts[0],pts[1]);
+      s.scale = Math.max(0.4, Math.min(4, gesture.scale*(newDist/gesture.dist)));
+      s.rotation = gesture.rotation + (newAngle-gesture.angle);
+      applyStampTransform(id);
+      moved = true;
+    } else if(pointers.size===1 && drag && drag.id===e.pointerId){
+      s.x = drag.ox + (e.clientX-drag.sx);
+      s.y = drag.oy + (e.clientY-drag.sy);
+      applyStampTransform(id);
+      if(Math.hypot(e.clientX-downPos.x, e.clientY-downPos.y) > 6) moved = true;
     }
   });
-  function releasePointer(e){
-    peStampPointers.delete(e.pointerId);
-    if(peStampPointers.size===1){
-      const [id, p] = Array.from(peStampPointers.entries())[0];
-      peStampDrag = { id, sx:p.x, sy:p.y, ox:peStampState.x, oy:peStampState.y };
-      peStampGesture = null;
-    } else if(peStampPointers.size===0){
-      peStampDrag = null; peStampGesture = null;
+  function release(e){
+    pointers.delete(e.pointerId);
+    if(pointers.size===1){
+      const [pid,p] = Array.from(pointers.entries())[0];
+      const s = peStamps.get(id);
+      if(s){ drag = { id:pid, sx:p.x, sy:p.y, ox:s.x, oy:s.y }; }
+      gesture = null;
+    } else if(pointers.size===0){
+      drag = null; gesture = null;
+      if(!moved){ cycleStampStyle(id); }
     }
   }
-  el.addEventListener('pointerup', releasePointer);
-  el.addEventListener('pointercancel', releasePointer);
+  el.addEventListener('pointerup', release);
+  el.addEventListener('pointercancel', release);
 }
-function bakeStampOnto(ctx, targetWidth){
-  const el = document.getElementById('peStampEl');
-  if(!el) return;
+function initColorbar(){
+  const bar = document.getElementById('peColorbar');
+  const handle = document.getElementById('peColorbarHandle');
+  let dragging = false;
+  function setFromClientY(clientY){
+    const rect = bar.getBoundingClientRect();
+    let ratio = (clientY-rect.top)/rect.height;
+    ratio = Math.max(0, Math.min(1, ratio));
+    handle.style.top = (ratio*rect.height)+'px';
+    const hue = Math.round(ratio*360);
+    if(peSelectedStampId){ setStampColor(peSelectedStampId, `hsl(${hue},85%,60%)`); }
+  }
+  handle.addEventListener('pointerdown', e=>{ dragging=true; try{handle.setPointerCapture(e.pointerId);}catch(err){} setFromClientY(e.clientY); });
+  handle.addEventListener('pointermove', e=>{ if(dragging) setFromClientY(e.clientY); });
+  handle.addEventListener('pointerup', ()=>{ dragging=false; });
+  handle.addEventListener('pointercancel', ()=>{ dragging=false; });
+}
+function bakeAllStampsOnto(ctx, targetWidth){
+  peStamps.forEach((s,id)=>bakeOneStamp(ctx, targetWidth, id));
+}
+function bakeOneStamp(ctx, targetWidth, id){
+  const s = peStamps.get(id); const el = document.getElementById(id);
+  if(!s || !el) return;
   const layerRect = document.getElementById('peStampLayer').getBoundingClientRect();
   const scaleToCanvas = targetWidth / layerRect.width;
+  const textSpan = el.querySelector('.pe-stamp-text');
+  const text = textSpan.textContent;
   const cs = getComputedStyle(el);
-  const text = el.querySelector('.pe-stamp-text').textContent;
-  const totalScale = scaleToCanvas * peStampState.scale;
-  const w = el.offsetWidth * totalScale, h = el.offsetHeight * totalScale;
-  const fontSize = parseFloat(cs.fontSize) * totalScale;
-  const padLeft = parseFloat(cs.paddingLeft) * totalScale, padTop = parseFloat(cs.paddingTop) * totalScale;
-  const cx = peStampState.x * scaleToCanvas, cy = peStampState.y * scaleToCanvas;
+  const textColor = getComputedStyle(textSpan).color;
+  const totalScale = scaleToCanvas * s.scale;
+  const w = el.offsetWidth*totalScale, h = el.offsetHeight*totalScale;
+  const fontSize = parseFloat(cs.fontSize)*totalScale;
+  const padLeft = parseFloat(cs.paddingLeft)*totalScale, padTop = parseFloat(cs.paddingTop)*totalScale;
+  const cx = s.x*scaleToCanvas, cy = s.y*scaleToCanvas;
 
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.rotate(peStampState.rotation * Math.PI/180);
+  ctx.rotate(s.rotation * Math.PI/180);
   const x = -w/2, y = -h/2;
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-  if(peStampStyle==='pill'){
+  if(s.style==='pill'){
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     peRoundRect(ctx, x, y, w, h, h/2); ctx.fill();
     ctx.font = `600 ${fontSize}px 'Inter', sans-serif`;
-    ctx.fillStyle = '#fff'; ctx.shadowColor='transparent'; ctx.shadowBlur=0;
+    ctx.shadowColor='transparent'; ctx.shadowBlur=0;
+    ctx.fillStyle = textColor;
     ctx.fillText(text, x+padLeft, y+padTop);
-  } else if(peStampStyle==='bold'){
+  } else if(s.style==='bold'){
     ctx.font = `800 ${fontSize}px 'Inter', sans-serif`;
-    ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 6*scaleToCanvas;
+    ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 6*scaleToCanvas;
+    ctx.fillStyle = textColor;
     ctx.fillText(text.toUpperCase(), x+padLeft, y+padTop);
-  } else if(peStampStyle==='script'){
+  } else if(s.style==='script'){
     ctx.font = `italic 500 ${fontSize}px 'Fraunces', serif`;
-    ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 6*scaleToCanvas;
+    ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 6*scaleToCanvas;
+    ctx.fillStyle = textColor;
     ctx.fillText(text, x+padLeft, y+padTop);
-  } else if(peStampStyle==='stamp'){
+  } else if(s.style==='stamp'){
     ctx.font = `600 ${fontSize}px 'Courier New', monospace`;
-    ctx.fillStyle = '#F5A623'; ctx.shadowColor='transparent'; ctx.shadowBlur=0;
+    ctx.shadowColor='transparent'; ctx.shadowBlur=0;
+    ctx.fillStyle = textColor;
     ctx.fillText(text, x+padLeft, y+padTop);
   } else {
     ctx.font = `italic 600 ${fontSize}px 'Fraunces', serif`;
-    ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.shadowColor = 'rgba(0,0,0,0.55)'; ctx.shadowBlur = 5*scaleToCanvas;
+    ctx.shadowColor = 'rgba(0,0,0,0.55)'; ctx.shadowBlur = 5*scaleToCanvas;
+    ctx.fillStyle = textColor;
     ctx.fillText(text, x+padLeft, y+padTop);
   }
   ctx.restore();
 }
-function savePhotoEditor(){
-  const out = document.createElement('canvas');
-  out.width = peCanvas.width; out.height = peCanvas.height;
-  const ctx = out.getContext('2d');
-  ctx.drawImage(peCanvas, 0, 0);
-  ctx.drawImage(peDrawCanvas, 0, 0);
-  bakeStampOnto(ctx, out.width);
-  out.toBlob(blob=>{
-    if(peTarget==='camera'){
-      const edited = new File([blob], `story_${Date.now()}.jpg`, { type:'image/jpeg' });
-      capturedFile = edited;
-      document.getElementById('cameraPreviewMedia').innerHTML = `<img src="${URL.createObjectURL(blob)}">`;
-    } else {
-      const edited = new File([blob], (captionPanelFile.name||'photo')+'.jpg', { type:'image/jpeg' });
-      captionPanelFile = edited;
-      if(captionQueue.length>0) captionQueue[0] = edited;
-      document.getElementById('captionPanelMedia').innerHTML = `<img src="${URL.createObjectURL(blob)}">`;
-    }
-    cancelPhotoEditor();
-  }, 'image/jpeg', 0.92);
-}
+initColorbar();
 </script>
 </body>
 </html>
