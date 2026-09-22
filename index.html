@@ -153,7 +153,12 @@
 
   .camera-modal{background:#000;}
   .camera-modal video{flex:1; width:100%; object-fit:cover; background:#111;}
-  .camera-topbar{position:absolute; top:0; left:0; right:0; padding:16px; display:flex; justify-content:flex-end; z-index:2;}
+  .camera-topbar{position:absolute; top:0; left:0; right:0; padding:16px; display:flex; justify-content:space-between; z-index:2;}
+  .camera-flip{color:#fff; font-size:20px; cursor:pointer; padding:6px 8px; background:rgba(255,255,255,0.15); border-radius:8px;}
+  .camera-error{
+    flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px;
+    color:#fff; text-align:center; padding:30px; font-size:13.5px; line-height:1.5;
+  }
   .camera-close{color:#fff; font-size:22px; cursor:pointer; padding:6px;}
   .camera-bottombar{position:absolute; bottom:0; left:0; right:0; padding:26px 24px; display:flex; align-items:center; justify-content:space-between; z-index:2;}
   .camera-gallery-btn{width:44px; height:44px; border-radius:8px; background:rgba(255,255,255,0.18); display:flex; align-items:center; justify-content:center; font-size:20px; cursor:pointer;}
@@ -232,6 +237,8 @@
   .pe-row{display:flex; gap:8px; flex-wrap:wrap;}
   .pe-btn{padding:9px 14px; border-radius:10px; background:var(--paper); border:1px solid var(--line); font-size:12.5px; font-weight:600; color:var(--ink); cursor:pointer;}
   .pe-color{width:30px; height:30px; border-radius:50%; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.2);}
+  .pe-style-btn{padding:8px 12px; border-radius:10px; background:var(--paper); border:1.5px solid var(--line); font-size:11.5px; font-weight:600; color:var(--ink-soft); cursor:pointer;}
+  .pe-style-btn.active{border-color:var(--week); color:var(--week);}
 </style>
 </head>
 <body>
@@ -344,7 +351,7 @@ async function renderApp(){
 
       <div class="profile">
         <div class="profile-clip"></div>
-        <div class="profile-frame"><div class="profile-frame-inner" style="background:${myProfile.avatar_color}">${myProfile.username[0].toUpperCase()}</div></div>
+        <div class="profile-frame" onclick="openProfileWeek()" style="cursor:pointer;"><div class="profile-frame-inner" style="background:${myProfile.avatar_color}">${myProfile.username[0].toUpperCase()}</div></div>
         <div class="profile-name">${myProfile.username}</div>
         <div class="profile-tag">Compte fermé — votre cercle reste privé.</div>
         <div class="signout" onclick="signOut()">Se déconnecter</div>
@@ -365,8 +372,12 @@ async function renderApp(){
       <!-- Modal caméra / story -->
       <div class="modal-overlay camera-modal" id="cameraModal">
         <video id="cameraVideo" autoplay playsinline muted></video>
+        <div class="camera-error" id="cameraError" style="display:none;"></div>
         <canvas id="cameraCanvas" style="display:none;"></canvas>
-        <div class="camera-topbar"><div class="camera-close" onclick="closeCamera()">✕</div></div>
+        <div class="camera-topbar">
+          <div class="camera-flip" onclick="flipCamera()">🔄</div>
+          <div class="camera-close" onclick="closeCamera()">✕</div>
+        </div>
         <div class="camera-bottombar">
           <div class="camera-gallery-btn" onclick="document.getElementById('cameraGalleryInput').click()">🖼️</div>
           <div class="camera-shutter" onpointerdown="shutterDown()" onpointerup="shutterUp()" onpointerleave="clearTimeout(shutterTimer)"></div>
@@ -484,8 +495,20 @@ async function renderApp(){
             </div>
           </div>
           <div class="pe-panel" id="pePanelInfo" style="display:none;">
+            <div class="pe-row" style="margin-bottom:10px;">
+              <div class="pe-btn" onclick="peUseLocation()">📍 Utiliser ma position</div>
+              <div class="pe-btn" onclick="peUseNow()">🕐 Heure actuelle</div>
+            </div>
             <input id="peLocationInput" placeholder="Lieu (optionnel)">
             <input id="peTimeInput" placeholder="Heure ou date (optionnel)">
+            <div id="peLocationMsg" class="msg"></div>
+            <div class="pe-row" style="margin:8px 0 12px;">
+              <div class="pe-style-btn active" data-style="minimal" onclick="peSetStampStyle('minimal')">Épuré</div>
+              <div class="pe-style-btn" data-style="pill" onclick="peSetStampStyle('pill')">Étiquette</div>
+              <div class="pe-style-btn" data-style="bold" onclick="peSetStampStyle('bold')">Gras</div>
+              <div class="pe-style-btn" data-style="script" onclick="peSetStampStyle('script')">Manuscrit</div>
+              <div class="pe-style-btn" data-style="stamp" onclick="peSetStampStyle('stamp')">Horodateur</div>
+            </div>
             <button onclick="peApplyInfoStamp()">Appliquer sur la photo</button>
           </div>
         </div>
@@ -518,10 +541,35 @@ async function signOut(){ await sb.auth.signOut(); render(); }
 
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 
+/* Réduit une image (photo prise par un téléphone = souvent 4-8 Mo) à une taille
+   raisonnable pour le web avant envoi, sans réduire la qualité visible sur mobile. */
+function compressImageFile(file, maxDim=1600, quality=0.82){
+  return new Promise((resolve)=>{
+    if(!file.type || !file.type.startsWith('image')){ resolve(file); return; }
+    const img = new Image();
+    img.onload = ()=>{
+      let w = img.naturalWidth, h = img.naturalHeight;
+      if(w<=maxDim && h<=maxDim){ resolve(file); return; } // déjà assez léger
+      const scale = maxDim / Math.max(w,h);
+      w = Math.round(w*scale); h = Math.round(h*scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      canvas.toBlob(blob=>{
+        if(!blob){ resolve(file); return; }
+        resolve(new File([blob], (file.name||'photo').replace(/\.\w+$/,'')+'.jpg', { type:'image/jpeg' }));
+      }, 'image/jpeg', quality);
+    };
+    img.onerror = ()=> resolve(file);
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 async function publishMedia(file, caption, postDateISO){
   const mediaType = file.type && file.type.startsWith('video') ? 'video' : 'photo';
-  const path = `${session.user.id}/${Date.now()}_${file.name || (mediaType+'.jpg')}`;
-  const { error: upErr } = await sb.storage.from('photos').upload(path, file);
+  const toUpload = mediaType==='photo' ? await compressImageFile(file) : file;
+  const path = `${session.user.id}/${Date.now()}_${toUpload.name || (mediaType+'.jpg')}`;
+  const { error: upErr } = await sb.storage.from('photos').upload(path, toUpload);
   if(upErr){ return { error: upErr.message }; }
   const { data: pub } = sb.storage.from('photos').getPublicUrl(path);
   const { error: insErr } = await sb.from('posts').insert({
@@ -639,8 +687,8 @@ function tileHTML(year, m){
   const handlers = `onclick="tileClick(${year},${m})"`;
   if(cover){
     const media = cover.media_type==='video'
-      ? `<video class="mini-photo" src="${cover.media_url}"></video>`
-      : `<img class="mini-photo" src="${cover.media_url}">`;
+      ? `<video class="mini-photo" src="${cover.media_url}#t=0.1" preload="metadata" muted playsinline></video>`
+      : `<img class="mini-photo" src="${cover.media_url}" loading="lazy" decoding="async">`;
     return `<div class="mini-frame" style="transform:rotate(${rot}deg)" ${handlers}>
       <div class="mini-tape"></div>
       ${media}
@@ -748,27 +796,57 @@ function attachAlbumSwipe(state){
 
 /* ---------- Clic sur une tuile : choix visionner / modifier ---------- */
 let tileTarget = null;
+let weekPostsCache = [];
 function tileClick(year, month){
   const arr = albumState.byYM[year+'-'+month] || [];
   if(arr.length===0){ openMonthEditor(year, month); return; }
-  tileTarget = { year, month };
+  tileTarget = { kind:'month', year, month };
   document.getElementById('actionSheetTitle').textContent = monthsFR[month] + ' ' + year;
+  document.getElementById('actionSheet').classList.add('open');
+}
+function currentWeekRange(){
+  const now = new Date();
+  const dow = (now.getDay()+6)%7; // 0 = lundi
+  const monday = new Date(now); monday.setDate(now.getDate()-dow); monday.setHours(0,0,0,0);
+  const nextMonday = new Date(monday); nextMonday.setDate(monday.getDate()+7);
+  const fmt = d => d.toISOString().slice(0,10);
+  return { start: fmt(monday), end: fmt(nextMonday) };
+}
+async function fetchWeekPosts(){
+  const { start, end } = currentWeekRange();
+  const { data } = await sb.from('posts').select('id,media_url,media_type,post_date,sort_order,caption')
+    .eq('author_id', session.user.id).gte('post_date', start).lt('post_date', end)
+    .order('sort_order').order('created_at');
+  return data || [];
+}
+async function openProfileWeek(){
+  weekPostsCache = await fetchWeekPosts();
+  if(weekPostsCache.length===0){ openWeekEditor(); return; }
+  tileTarget = { kind:'week' };
+  document.getElementById('actionSheetTitle').textContent = 'Cette semaine';
   document.getElementById('actionSheet').classList.add('open');
 }
 function closeActionSheet(){ document.getElementById('actionSheet').classList.remove('open'); }
 function actionSheetView(){
-  const { year, month } = tileTarget;
   closeActionSheet();
-  openMonthStory(year, month);
+  if(tileTarget.kind==='week'){ openStoryFromPosts(weekPostsCache, 'Cette semaine'); }
+  else { openMonthStory(tileTarget.year, tileTarget.month); }
 }
 function actionSheetModify(){
-  const { year, month } = tileTarget;
   closeActionSheet();
-  openMonthEditor(year, month);
+  if(tileTarget.kind==='week'){ openWeekEditor(); }
+  else { openMonthEditor(tileTarget.year, tileTarget.month); }
 }
 
 /* ---------- Story plein écran pour un mois ---------- */
 let monthStoryState = null;
+function openStoryFromPosts(posts, title){
+  if(!posts.length) return;
+  monthStoryState = { posts, index:0, timer:null, captionExpanded:false };
+  document.getElementById('monthStoryTitle').textContent = title;
+  document.getElementById('monthStoryOverlay').classList.add('open');
+  renderMonthStory();
+}
 function openMonthStory(year, month){
   const posts = albumState.byYM[year+'-'+month] || [];
   if(!posts.length) return;
@@ -836,23 +914,35 @@ let editorTarget = null, editorItems = [];
 let dragIdx = null, dragEl = null;
 
 function openMonthEditor(year, month){
-  editorTarget = { year, month };
+  editorTarget = { kind:'month', year, month };
   editorItems = [...(albumState.byYM[year+'-'+month] || [])];
   document.getElementById('editorTitle').textContent = monthsFR[month] + ' ' + year;
   document.getElementById('editorMsg').innerHTML = '';
   renderEditorList();
   document.getElementById('editorModal').classList.add('open');
 }
+async function openWeekEditor(){
+  editorTarget = { kind:'week' };
+  editorItems = weekPostsCache.length ? [...weekPostsCache] : [...(await fetchWeekPosts())];
+  document.getElementById('editorTitle').textContent = 'Cette semaine';
+  document.getElementById('editorMsg').innerHTML = '';
+  renderEditorList();
+  document.getElementById('editorModal').classList.add('open');
+}
 function closeMonthEditor(){
   document.getElementById('editorModal').classList.remove('open');
-  albumState.byYM[editorTarget.year+'-'+editorTarget.month] = editorItems;
-  renderAlbumStatic(albumState);
+  if(editorTarget.kind==='month'){
+    albumState.byYM[editorTarget.year+'-'+editorTarget.month] = editorItems;
+    renderAlbumStatic(albumState);
+  } else {
+    weekPostsCache = editorItems;
+  }
   editorTarget = null;
 }
 function renderEditorList(){
   const list = document.getElementById('editorList');
   list.innerHTML = editorItems.map((p,i)=>{
-    const thumb = p.media_type==='video' ? `<video src="${p.media_url}"></video>` : `<img src="${p.media_url}">`;
+    const thumb = p.media_type==='video' ? `<video src="${p.media_url}#t=0.1" preload="metadata" muted playsinline></video>` : `<img src="${p.media_url}" loading="lazy" decoding="async">`;
     const cap = p.caption ? `<div class="editor-caption">${p.caption}</div>` : `<div class="editor-caption placeholder">Ajouter un texte…</div>`;
     return `<div class="editor-row" data-idx="${i}">
       <div class="editor-handle" onpointerdown="startDrag(event, ${i})">☰</div>
@@ -925,13 +1015,14 @@ async function confirmCaptionPanel(){
   const msg = document.getElementById('editorMsg');
   if(captionPanelMode === 'add'){
     msg.innerHTML = `<div class="msg">Envoi en cours…</div>`;
-    const { year, month } = editorTarget;
-    const postDateISO = `${year}-${String(month+1).padStart(2,'0')}-15`;
+    const postDateISO = editorTarget.kind==='week' ? todayISO()
+      : `${editorTarget.year}-${String(editorTarget.month+1).padStart(2,'0')}-15`;
     const nextOrder = editorItems.reduce((mx,p)=>Math.max(mx, p.sort_order||0), 0) + 1;
     const file = captionPanelFile;
     const mediaType = file.type && file.type.startsWith('video') ? 'video' : 'photo';
-    const path = `${session.user.id}/${Date.now()}_${file.name}`;
-    const { error: upErr } = await sb.storage.from('photos').upload(path, file);
+    const toUpload = mediaType==='photo' ? await compressImageFile(file) : file;
+    const path = `${session.user.id}/${Date.now()}_${toUpload.name}`;
+    const { error: upErr } = await sb.storage.from('photos').upload(path, toUpload);
     if(upErr){ msg.innerHTML = `<div class="msg error">${upErr.message}</div>`; return; }
     const { data: pub } = sb.storage.from('photos').getPublicUrl(path);
     const { data: inserted, error: insErr } = await sb.from('posts').insert({
@@ -997,18 +1088,53 @@ async function onDragEnd(){
 let cameraStream = null;
 let capturedFile = null;
 let mediaRecorder = null, recordedChunks = [], isRecording = false, shutterTimer = null;
+let currentFacingMode = 'environment';
 
 async function openCamera(){
   document.getElementById('cameraModal').classList.add('open');
   document.getElementById('cameraPreview').classList.remove('open');
   document.getElementById('cameraVideo').style.display = 'block';
-  try {
-    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: true });
-    document.getElementById('cameraVideo').srcObject = cameraStream;
-  } catch(err){
-    // Pas d'accès caméra : on ouvre directement la galerie
-    document.getElementById('cameraGalleryInput').click();
+  document.getElementById('cameraError').style.display = 'none';
+  currentFacingMode = 'environment';
+
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    showCameraError('Ce navigateur ne permet pas d\'accéder à la caméra ici (aucune API caméra détectée).');
+    return;
   }
+  await requestCameraStream(currentFacingMode);
+}
+async function requestCameraStream(facingMode){
+  stopCameraStream();
+  const constraints = {
+    video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 }, height: { ideal: 720 } },
+    audio: true
+  };
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+    document.getElementById('cameraVideo').srcObject = cameraStream;
+    return true;
+  } catch(err1){
+    try {
+      // Repli : caméra générique, sans exiger un sens précis ni une résolution précise
+      cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      document.getElementById('cameraVideo').srcObject = cameraStream;
+      return true;
+    } catch(err2){
+      showCameraError(err2.name + ' : ' + (err2.message || 'accès refusé ou indisponible.'));
+      return false;
+    }
+  }
+}
+async function flipCamera(){
+  if(isRecording) return; // on ne change pas de caméra en pleine vidéo
+  currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+  await requestCameraStream(currentFacingMode);
+}
+function showCameraError(text){
+  document.getElementById('cameraVideo').style.display = 'none';
+  const box = document.getElementById('cameraError');
+  box.innerHTML = `<div>${text}</div><button class="ghost-btn" style="width:auto; padding:10px 18px; color:#fff !important; border-color:rgba(255,255,255,0.4) !important;" onclick="document.getElementById('cameraGalleryInput').click()">Choisir dans la galerie</button>`;
+  box.style.display = 'flex';
 }
 function stopCameraStream(){
   if(cameraStream){ cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
@@ -1032,9 +1158,15 @@ function startRecording(){
   isRecording = true;
   recordedChunks = [];
   document.querySelector('.camera-shutter').classList.add('recording');
+  const options = { videoBitsPerSecond: 2_000_000 };
+  if(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')){
+    options.mimeType = 'video/webm;codecs=vp8,opus';
+  }
   try{
-    mediaRecorder = new MediaRecorder(cameraStream);
-  } catch(err){ isRecording = false; return; }
+    mediaRecorder = new MediaRecorder(cameraStream, options);
+  } catch(err){
+    try{ mediaRecorder = new MediaRecorder(cameraStream); } catch(err2){ isRecording = false; return; }
+  }
   mediaRecorder.ondataavailable = e=>{ if(e.data.size>0) recordedChunks.push(e.data); };
   mediaRecorder.onstop = ()=>{
     const blob = new Blob(recordedChunks, { type:'video/webm' });
@@ -1052,12 +1184,15 @@ function stopRecording(){
 function captureCameraPhoto(){
   const video = document.getElementById('cameraVideo');
   const canvas = document.getElementById('cameraCanvas');
-  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-  canvas.getContext('2d').drawImage(video, 0, 0);
+  const MAX_DIM = 1600;
+  const scale = Math.min(1, MAX_DIM / Math.max(video.videoWidth, video.videoHeight));
+  canvas.width = Math.round(video.videoWidth*scale);
+  canvas.height = Math.round(video.videoHeight*scale);
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
   canvas.toBlob(blob => {
     capturedFile = new File([blob], `story_${Date.now()}.jpg`, { type: 'image/jpeg' });
     showCameraPreview(capturedFile);
-  }, 'image/jpeg', 0.92);
+  }, 'image/jpeg', 0.85);
   stopCameraStream();
 }
 function handleCameraFile(file){
@@ -1111,6 +1246,10 @@ function openPhotoEditor(target){
   peCanvas = document.getElementById('peCanvas');
   peDrawCanvas = document.getElementById('peDrawCanvas');
   peState = { filter:'none', crop:'original', rotation:0 };
+  peSetStampStyle('minimal');
+  document.getElementById('peLocationInput').value = '';
+  document.getElementById('peTimeInput').value = '';
+  document.getElementById('peLocationMsg').textContent = '';
   peSourceImage = new Image();
   peSourceImage.onload = ()=>{ peRedrawBase(); attachDrawEvents(); };
   peSourceImage.src = URL.createObjectURL(file);
@@ -1139,6 +1278,9 @@ function peRedrawBase(){
   }
   let outW = sw, outH = sh;
   if(peState.rotation===90 || peState.rotation===270){ outW=sh; outH=sw; }
+  const MAX_WORK_DIM = 1400;
+  const workScale = Math.min(1, MAX_WORK_DIM / Math.max(outW, outH));
+  outW = Math.round(outW*workScale); outH = Math.round(outH*workScale);
   peCanvas.width = outW; peCanvas.height = outH;
   peDrawCanvas.width = outW; peDrawCanvas.height = outH;
   const ctx = peCanvas.getContext('2d');
@@ -1146,7 +1288,8 @@ function peRedrawBase(){
   ctx.filter = cssFilterFor(peState.filter);
   ctx.translate(outW/2, outH/2);
   ctx.rotate(peState.rotation * Math.PI/180);
-  ctx.drawImage(peSourceImage, sx, sy, sw, sh, -sw/2, -sh/2, sw, sh);
+  const dw = sw*workScale, dh = sh*workScale;
+  ctx.drawImage(peSourceImage, sx, sy, sw, sh, -dw/2, -dh/2, dw, dh);
   ctx.restore();
   peDrawCanvas.getContext('2d').clearRect(0,0,outW,outH);
 }
@@ -1180,20 +1323,92 @@ function attachDrawEvents(){
   peDrawCanvas.addEventListener('pointerup', ()=>{ peDrawing=false; });
   peDrawCanvas.addEventListener('pointercancel', ()=>{ peDrawing=false; });
 }
+let peStampStyle = 'minimal';
+function peSetStampStyle(s){
+  peStampStyle = s;
+  document.querySelectorAll('.pe-style-btn').forEach(b=>b.classList.toggle('active', b.dataset.style===s));
+}
+function peUseNow(){
+  const now = new Date();
+  document.getElementById('peTimeInput').value = now.toLocaleString('fr-FR', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+}
+function peUseLocation(){
+  const msg = document.getElementById('peLocationMsg');
+  if(!navigator.geolocation){ msg.textContent = "La géolocalisation n'est pas disponible sur cet appareil."; return; }
+  msg.textContent = 'Localisation en cours…';
+  navigator.geolocation.getCurrentPosition(async (pos)=>{
+    const { latitude, longitude } = pos.coords;
+    try{
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=14`);
+      const data = await res.json();
+      const a = data.address || {};
+      const place = a.city || a.town || a.village || a.municipality || a.county || '';
+      const country = a.country || '';
+      document.getElementById('peLocationInput').value = [place, country].filter(Boolean).join(', ') || 'Position trouvée';
+      msg.textContent = '';
+    } catch(err){
+      document.getElementById('peLocationInput').value = `${latitude.toFixed(3)}, ${longitude.toFixed(3)}`;
+      msg.textContent = 'Lieu approximatif (nom indisponible).';
+    }
+  }, (err)=>{
+    msg.textContent = 'Localisation refusée ou indisponible.';
+  }, { enableHighAccuracy:false, timeout:8000 });
+}
+function peRoundRect(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
 function peApplyInfoStamp(){
   const loc = document.getElementById('peLocationInput').value.trim();
   const time = document.getElementById('peTimeInput').value.trim();
   const text = [loc, time].filter(Boolean).join(' · ');
   if(!text) return;
   const ctx = peDrawCanvas.getContext('2d');
-  const size = Math.max(14, Math.round(peDrawCanvas.width*0.045));
-  ctx.font = `italic 600 ${size}px 'Fraunces', serif`;
-  ctx.fillStyle = 'rgba(255,255,255,0.95)';
-  ctx.shadowColor = 'rgba(0,0,0,0.55)'; ctx.shadowBlur = 5;
-  ctx.textBaseline = 'bottom';
-  ctx.fillText(text, size*0.6, peDrawCanvas.height - size*0.6);
+  const W = peDrawCanvas.width, H = peDrawCanvas.height;
+  const base = Math.max(14, Math.round(W*0.045));
+  ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+
+  if(peStampStyle==='pill'){
+    ctx.font = `600 ${Math.round(base*0.8)}px 'Inter', sans-serif`;
+    const padX = base*0.6, padY = base*0.4;
+    const textW = ctx.measureText(text).width;
+    const pillW = textW + padX*2, pillH = base + padY*2;
+    const px = base*0.6, py = H - base*0.6 - pillH;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    peRoundRect(ctx, px, py, pillW, pillH, pillH/2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.fillText(text, px+padX, py+pillH-padY);
+  } else if(peStampStyle==='bold'){
+    ctx.font = `800 ${Math.round(base*1.15)}px 'Inter', sans-serif`;
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 6;
+    ctx.fillText(text.toUpperCase(), base*0.5, H-base*0.7);
+  } else if(peStampStyle==='script'){
+    ctx.font = `italic 500 ${Math.round(base*1.3)}px 'Fraunces', serif`;
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 6;
+    ctx.fillText(text, base*0.6, H-base*0.6);
+  } else if(peStampStyle==='stamp'){
+    ctx.font = `600 ${Math.round(base*0.75)}px 'Courier New', monospace`;
+    ctx.fillStyle = '#F5A623';
+    ctx.textAlign = 'right';
+    ctx.fillText(text, W-base*0.6, H-base*0.5);
+    ctx.textAlign = 'left';
+  } else {
+    ctx.font = `italic 600 ${base}px 'Fraunces', serif`;
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.shadowColor = 'rgba(0,0,0,0.55)'; ctx.shadowBlur = 5;
+    ctx.fillText(text, base*0.6, H-base*0.6);
+  }
   document.getElementById('peLocationInput').value = '';
   document.getElementById('peTimeInput').value = '';
+  document.getElementById('peLocationMsg').textContent = '';
 }
 function savePhotoEditor(){
   const out = document.createElement('canvas');
